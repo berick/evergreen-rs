@@ -8,3 +8,9 @@ edition = "2018"
 
 [dependencies]
 roxmltree = "0.14.1"
+chrono = "0.4.19"
+yaml-rust = "0.4.5"
+log = "0.4.14"
+log4rs = "1.0.0"
+json = "0.12.4"
+
