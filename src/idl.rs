@@ -5,6 +5,7 @@ use log::{trace, warn};
 use roxmltree;
 use json;
 use opensrf::classified;
+use opensrf::client::DataSerializer;
 
 const OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
@@ -290,9 +291,50 @@ impl Parser {
         class.links.insert(link.field.to_string(), link);
     }
 
+    /// Converts and IDL-classed array into a hash whose keys match
+    /// the values defined in the IDL for this class.
+    ///
+    /// Includes a _classname key with the IDL class.
+    fn array_to_hash(&self, class: &str, value: &json::JsonValue) -> json::JsonValue {
+
+        let fields = &self.classes.get(class).unwrap().fields;
+
+        let mut hash = json::JsonValue::new_object();
+
+        hash.insert(CLASSNAME_KEY, json::from(class));
+
+        for (name, field) in fields {
+            hash.insert(name, value[field.array_pos].clone());
+        }
+
+        hash
+    }
+
+    /// Converts and IDL-classed hash into an IDL-classed array, whose
+    /// array positions match the IDL field positions.
+    fn hash_to_array(&self, class: &str, hash: &json::JsonValue) -> json::JsonValue {
+
+        let fields = &self.classes.get(class).unwrap().fields;
+
+        // Translate the fields hash into a sorted array
+        let mut sorted = fields.values().collect::<Vec<&Field>>();
+        sorted.sort_by_key(|f| f.array_pos);
+
+        let mut array = json::JsonValue::new_array();
+
+        for field in sorted {
+            array.push(hash[&field.name].clone());
+        }
+
+        array
+    }
+}
+
+impl DataSerializer for Parser {
+
     /// Creates a clone of the provided JsonValue, replacing any
     /// IDL-classed arrays with classed hashes.
-    pub fn unpack(&self, value: &json::JsonValue) -> json::JsonValue {
+    fn unpack(&self, value: &json::JsonValue) -> json::JsonValue {
 
         if !value.is_array() && !value.is_object() { return value.clone(); }
 
@@ -335,45 +377,10 @@ impl Parser {
         obj
     }
 
-    /// Converts and IDL-classed array into a hash whose keys match
-    /// the values defined in the IDL for this class.
-    ///
-    /// Includes a _classname key with the IDL class.
-    fn array_to_hash(&self, class: &str, value: &json::JsonValue) -> json::JsonValue {
-
-        let fields = &self.classes.get(class).unwrap().fields;
-
-        let mut hash = json::JsonValue::new_object();
-
-        hash.insert(CLASSNAME_KEY, json::from(class));
-
-        for (name, field) in fields {
-            hash.insert(name, value[field.array_pos].clone());
-        }
-
-        hash
-    }
-
-    fn hash_to_array(&self, class: &str, hash: &json::JsonValue) -> json::JsonValue {
-
-        let fields = &self.classes.get(class).unwrap().fields;
-
-        // Translate the fields hash into a sorted array
-        let mut sorted = fields.values().collect::<Vec<&Field>>();
-        sorted.sort_by_key(|f| f.array_pos);
-
-        let mut array = json::JsonValue::new_array();
-
-        for field in sorted {
-            array.push(hash[&field.name].clone());
-        }
-
-        array
-    }
 
     /// Creates a clone of the provided JsonValue, replacing any
     /// IDL-classed hashes with IDL-classed arrays.
-    pub fn pack(&self, value: &json::JsonValue) -> json::JsonValue {
+    fn pack(&self, value: &json::JsonValue) -> json::JsonValue {
 
         if !value.is_array() && !value.is_object() { return value.clone(); }
 
@@ -399,7 +406,7 @@ impl Parser {
                 arr.push(self.pack(&child));
             }
 
-            return arr;
+            arr
 
         } else if value.is_object() {
 
@@ -409,11 +416,12 @@ impl Parser {
                 hash.insert(key, self.pack(&val));
             }
 
-            return hash;
+            hash
+
+        } else {
+
+            value.clone() // should not get here
         }
-
-        value.clone()
     }
+
 }
-
-
