@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use log::{trace};
+use log::{trace, warn};
 use roxmltree;
+use json;
+use opensrf::classified;
 
 const OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
-const OILS_NS_OBJ_PREFIX: &str = "oils_obj";
 const OILS_NS_PERSIST: &str = "http://open-ils.org/spec/opensrf/IDL/persistence/v1";
-const OILS_NS_PERSIST_PREFIX: &str = "oils_persist";
 const OILS_NS_REPORTER: &str = "http://open-ils.org/spec/opensrf/IDL/reporter/v1";
-const OILS_NS_REPORTER_PREFIX: &str = "reporter";
 
 const AUTO_FIELDS: [&str; 3] = ["isnew", "ischanged", "isdeleted"];
+const CLASSNAME_KEY: &str = "_classname";
 
 pub enum DataType {
     Int,
@@ -88,6 +88,28 @@ pub enum RelType {
     Unset,
 }
 
+impl Into<&'static str> for RelType {
+    fn into(self) -> &'static str {
+        match self {
+            Self::HasA     => "has_a",
+            Self::HasMany  => "has_many",
+            Self::MightHave => "might_have",
+            Self::Unset    => "unset",
+        }
+    }
+}
+
+impl From<&str> for RelType {
+    fn from(s: &str) -> Self {
+        match s {
+            "has_a"      => Self::HasA,
+            "has_many"   => Self::HasMany,
+            "might_have" => Self::MightHave,
+            _            => Self::Unset,
+        }
+	}
+}
+
 pub struct Link {
     field: String,
     reltype: RelType,
@@ -129,7 +151,7 @@ impl Parser {
 
     pub fn parse_string(xml: &str) -> Parser {
 
-        let doc = roxmltree::Document::parse(xml).unwrap(); // TODO errors
+        let doc = roxmltree::Document::parse(xml).unwrap();
 
         let mut parser = Parser::new();
 
@@ -189,8 +211,6 @@ impl Parser {
 
         self.add_auto_fields(&mut class, field_array_pos);
 
-        println!("IDL Adding: {}", class);
-
         self.classes.insert(class.class.to_string(), class);
     }
 
@@ -248,15 +268,151 @@ impl Parser {
 
     fn add_link(&self, class: &mut Class, node: &roxmltree::Node) {
 
+        let reltype: RelType =
+            match node.attribute("reltype") {
+            Some(rt) => rt.into(),
+            None => RelType::Unset,
+        };
+
+        let map = match node.attribute("map") {
+            Some(s) => Some(s.to_string()),
+            None => None,
+        };
+
         let link = Link {
             field: node.attribute("field").unwrap().to_string(),
-            reltype: RelType::HasA, // TODO
+            reltype: reltype,
             key: node.attribute("key").unwrap().to_string(),
-            map: None, // TODO
+            map: map,
             class: node.attribute("class").unwrap().to_string(),
         };
 
         class.links.insert(link.field.to_string(), link);
+    }
+
+    /// Creates a clone of the provided JsonValue, replacing any
+    /// IDL-classed arrays with classed hashes.
+    pub fn unpack(&self, value: &json::JsonValue) -> json::JsonValue {
+
+        if !value.is_array() && !value.is_object() { return value.clone(); }
+
+        let obj: json::JsonValue;
+
+        if let Some(unpacked) = classified::ClassifiedJson::declassify(value) {
+
+            if unpacked.json().is_array() {
+                obj = self.array_to_hash(unpacked.class(), unpacked.json());
+            } else {
+                panic!("IDL-encoded objects should be arrays");
+            }
+
+        } else {
+
+            obj = value.clone();
+        }
+
+        if obj.is_array() {
+
+            let mut arr = json::JsonValue::new_array();
+
+            for child in obj.members() {
+                arr.push(self.unpack(&child));
+            }
+
+            return arr;
+
+        } else if obj.is_object() {
+
+            let mut hash = json::JsonValue::new_object();
+
+            for (key, val) in obj.entries() {
+                hash.insert(key, self.unpack(&val));
+            }
+
+            return hash;
+        }
+
+        obj
+    }
+
+    /// Converts and IDL-classed array into a hash whose keys match
+    /// the values defined in the IDL for this class.
+    ///
+    /// Includes a _classname key with the IDL class.
+    fn array_to_hash(&self, class: &str, value: &json::JsonValue) -> json::JsonValue {
+
+        let fields = &self.classes.get(class).unwrap().fields;
+
+        let mut hash = json::JsonValue::new_object();
+
+        hash.insert(CLASSNAME_KEY, json::from(class));
+
+        for (name, field) in fields {
+            hash.insert(name, value[field.array_pos].clone());
+        }
+
+        hash
+    }
+
+    fn hash_to_array(&self, class: &str, hash: &json::JsonValue) -> json::JsonValue {
+
+        let fields = &self.classes.get(class).unwrap().fields;
+
+        // Translate the fields hash into a sorted array
+        let mut sorted = fields.values().collect::<Vec<&Field>>();
+        sorted.sort_by_key(|f| f.array_pos);
+
+        let mut array = json::JsonValue::new_array();
+
+        for field in sorted {
+            array.push(hash[&field.name].clone());
+        }
+
+        array
+    }
+
+    /// Creates a clone of the provided JsonValue, replacing any
+    /// IDL-classed hashes with IDL-classed arrays.
+    pub fn pack(&self, value: &json::JsonValue) -> json::JsonValue {
+
+        if !value.is_array() && !value.is_object() { return value.clone(); }
+
+        if value.is_object() && value.has_key(CLASSNAME_KEY) {
+
+            let class = value[CLASSNAME_KEY].as_str().unwrap();
+            let array = self.hash_to_array(&class, &value);
+
+            let mut new_arr = json::JsonValue::new_array();
+
+            for child in array.members() {
+                new_arr.push(self.pack(&child));
+            }
+
+            return classified::ClassifiedJson::classify(&new_arr, &class);
+        }
+
+        if value.is_array() {
+
+            let mut arr = json::JsonValue::new_array();
+
+            for child in value.members() {
+                arr.push(self.pack(&child));
+            }
+
+            return arr;
+
+        } else if value.is_object() {
+
+            let mut hash = json::JsonValue::new_object();
+
+            for (key, val) in value.entries() {
+                hash.insert(key, self.pack(&val));
+            }
+
+            return hash;
+        }
+
+        value.clone()
     }
 }
 
