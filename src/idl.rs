@@ -92,10 +92,10 @@ pub enum RelType {
 impl Into<&'static str> for RelType {
     fn into(self) -> &'static str {
         match self {
-            Self::HasA     => "has_a",
-            Self::HasMany  => "has_many",
+            Self::HasA      => "has_a",
+            Self::HasMany   => "has_many",
             Self::MightHave => "might_have",
-            Self::Unset    => "unset",
+            Self::Unset     => "unset",
         }
     }
 }
@@ -109,6 +109,12 @@ impl From<&str> for RelType {
             _            => Self::Unset,
         }
 	}
+}
+
+impl fmt::Display for RelType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 pub struct Link {
@@ -269,8 +275,7 @@ impl Parser {
 
     fn add_link(&self, class: &mut Class, node: &roxmltree::Node) {
 
-        let reltype: RelType =
-            match node.attribute("reltype") {
+        let reltype: RelType = match node.attribute("reltype") {
             Some(rt) => rt.into(),
             None => RelType::Unset,
         };
@@ -423,5 +428,4 @@ impl DataSerializer for Parser {
             value.clone() // should not get here
         }
     }
-
 }

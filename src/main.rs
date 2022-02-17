@@ -1,10 +1,10 @@
 use opensrf::conf::ClientConfig;
 use opensrf::client::Client;
 use opensrf::client::ClientSession;
-use opensrf::client::DataSerializer;
 use evergreen::idl;
 
 fn main() {
+
     let mut conf = ClientConfig::new();
     conf.load_file("conf/opensrf_client.yml");
 
@@ -28,13 +28,20 @@ fn main() {
     let req = client.request(&ses,
         "open-ils.cstore.direct.actor.user.retrieve", params).unwrap();
 
+    if let Some(user) = client.recv_one(&req, 10).unwrap() {
+        println!("Fetched user id={} usrname={} homeorg={}",
+            user["id"], user["usrname"], user["home_ou"]["shortname"]);
+    }
+
+    /*
     while !client.complete(&req) {
         match client.recv(&req, 10).unwrap() {
             Some(user) => println!("{} {} home_ou={}",
                 user["id"], user["usrname"], user["home_ou"]["name"]),
-            None => break
+            None => break // timeout or complete
         }
     }
+    */
 
     client.cleanup(&ses);
 }
