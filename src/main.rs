@@ -1,12 +1,12 @@
-use opensrf::conf::ClientConfig;
-use opensrf::client::Client;
-use opensrf::client::ClientSession;
 use evergreen::idl;
+use opensrf::client::Client;
+use opensrf::conf::ClientConfig;
 
 fn main() {
-
     let mut conf = ClientConfig::new();
-    conf.load_file("conf/opensrf_client.yml");
+    conf.load_file("conf/opensrf_client.yml")
+        .expect("Error loading config");
+    //conf.load_xml_file("/openils/conf/opensrf_core.xml", "service");
 
     let parser = idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
 
@@ -17,20 +17,23 @@ fn main() {
 
     let params = vec![
         json::from(1),
-        json::object!{
+        json::object! {
             flesh: 1,
             flesh_fields: json::object!{
                 au: vec!["home_ou"]
             }
-        }
+        },
     ];
 
-    let req = client.request(&ses,
-        "open-ils.cstore.direct.actor.user.retrieve", params).unwrap();
+    let req = client
+        .request(&ses, "open-ils.cstore.direct.actor.user.retrieve", params)
+        .unwrap();
 
     if let Some(user) = client.recv_one(&req, 10).unwrap() {
-        println!("Fetched user id={} usrname={} homeorg={}",
-            user["id"], user["usrname"], user["home_ou"]["shortname"]);
+        println!(
+            "Fetched user id={} usrname={} homeorg={}",
+            user["id"], user["usrname"], user["home_ou"]["shortname"]
+        );
     }
 
     /*
@@ -45,4 +48,3 @@ fn main() {
 
     client.cleanup(&ses);
 }
-

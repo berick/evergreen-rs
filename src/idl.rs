@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::fs;
-use log::{trace, warn};
-use roxmltree;
 use json;
 use opensrf::classified;
 use opensrf::client::DataSerializer;
+use roxmltree;
+use std::collections::HashMap;
+use std::fmt;
+use std::fs;
 
-const OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
-const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
+const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
+const _OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
 const OILS_NS_PERSIST: &str = "http://open-ils.org/spec/opensrf/IDL/persistence/v1";
 const OILS_NS_REPORTER: &str = "http://open-ils.org/spec/opensrf/IDL/reporter/v1";
 
@@ -28,7 +27,7 @@ impl DataType {
     pub fn is_numeric(&self) -> bool {
         match *self {
             Self::Int | Self::Float => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -36,12 +35,12 @@ impl DataType {
 impl Into<&'static str> for DataType {
     fn into(self) -> &'static str {
         match self {
-            Self::Int 		=> "int",
-            Self::Float 	=> "float",
-            Self::Text 		=> "text",
-            Self::Bool 		=> "bool",
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Text => "text",
+            Self::Bool => "bool",
             Self::Timestamp => "timestamp",
-            Self::Link 		=> "link",
+            Self::Link => "link",
         }
     }
 }
@@ -49,15 +48,15 @@ impl Into<&'static str> for DataType {
 impl From<&str> for DataType {
     fn from(s: &str) -> Self {
         match s {
-            "int"       => Self::Int,
-            "float"     => Self::Float,
-            "text"      => Self::Text,
-            "bool"      => Self::Bool,
+            "int" => Self::Int,
+            "float" => Self::Float,
+            "text" => Self::Text,
+            "bool" => Self::Bool,
             "timestamp" => Self::Timestamp,
-            "link"      => Self::Link,
-            _           => Self::Text,
+            "link" => Self::Link,
+            _ => Self::Text,
         }
-	}
+    }
 }
 
 impl fmt::Display for DataType {
@@ -77,8 +76,11 @@ pub struct Field {
 
 impl fmt::Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Field: name={} datatype={} virtual={} label={}",
-            self.name, self.datatype, self.is_virtual, self.label)
+        write!(
+            f,
+            "Field: name={} datatype={} virtual={} label={}",
+            self.name, self.datatype, self.is_virtual, self.label
+        )
     }
 }
 
@@ -92,10 +94,10 @@ pub enum RelType {
 impl Into<&'static str> for RelType {
     fn into(self) -> &'static str {
         match self {
-            Self::HasA      => "has_a",
-            Self::HasMany   => "has_many",
+            Self::HasA => "has_a",
+            Self::HasMany => "has_many",
             Self::MightHave => "might_have",
-            Self::Unset     => "unset",
+            Self::Unset => "unset",
         }
     }
 }
@@ -103,12 +105,12 @@ impl Into<&'static str> for RelType {
 impl From<&str> for RelType {
     fn from(s: &str) -> Self {
         match s {
-            "has_a"      => Self::HasA,
-            "has_many"   => Self::HasMany,
+            "has_a" => Self::HasA,
+            "has_many" => Self::HasMany,
             "might_have" => Self::MightHave,
-            _            => Self::Unset,
+            _ => Self::Unset,
         }
-	}
+    }
 }
 
 impl fmt::Display for RelType {
@@ -134,8 +136,14 @@ pub struct Class {
 
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Class: class={} fields={} links={} label={} ",
-            self.class, self.fields.len(), self.links.len(), self.label)
+        write!(
+            f,
+            "Class: class={} fields={} links={} label={} ",
+            self.class,
+            self.fields.len(),
+            self.links.len(),
+            self.label
+        )
     }
 }
 
@@ -144,7 +152,6 @@ pub struct Parser {
 }
 
 impl Parser {
-
     pub fn new() -> Self {
         Parser {
             classes: HashMap::new(),
@@ -157,7 +164,6 @@ impl Parser {
     }
 
     pub fn parse_string(xml: &str) -> Parser {
-
         let doc = roxmltree::Document::parse(xml).unwrap();
 
         let mut parser = Parser::new();
@@ -165,8 +171,9 @@ impl Parser {
         for root_node in doc.root().children() {
             if root_node.tag_name().name() == "IDL" {
                 for class_node in root_node.children() {
-                    if  class_node.node_type() == roxmltree::NodeType::Element
-                        && class_node.tag_name().name() == "class" {
+                    if class_node.node_type() == roxmltree::NodeType::Element
+                        && class_node.tag_name().name() == "class"
+                    {
                         parser.add_class(&class_node);
                     }
                 }
@@ -177,7 +184,6 @@ impl Parser {
     }
 
     fn add_class(&mut self, node: &roxmltree::Node) {
-
         let name = node.attribute("id").unwrap(); // required
 
         let label = match node.attribute((OILS_NS_REPORTER, "label")) {
@@ -194,23 +200,25 @@ impl Parser {
 
         let mut field_array_pos = 0;
 
-        for child in node.children()
-            .filter(|n| n.node_type() == roxmltree::NodeType::Element) {
-
+        for child in node
+            .children()
+            .filter(|n| n.node_type() == roxmltree::NodeType::Element)
+        {
             if child.tag_name().name() == "fields" {
-                for field_node in child.children()
+                for field_node in child
+                    .children()
                     .filter(|n| n.node_type() == roxmltree::NodeType::Element)
-                    .filter(|n| n.tag_name().name() == "field") {
-
+                    .filter(|n| n.tag_name().name() == "field")
+                {
                     self.add_field(&mut class, field_array_pos, &field_node);
                     field_array_pos += 1;
                 }
-
             } else if child.tag_name().name() == "links" {
-                for link_node in child.children()
+                for link_node in child
+                    .children()
                     .filter(|n| n.node_type() == roxmltree::NodeType::Element)
-                    .filter(|n| n.tag_name().name() == "link") {
-
+                    .filter(|n| n.tag_name().name() == "link")
+                {
                     self.add_link(&mut class, &link_node);
                 }
             }
@@ -222,31 +230,30 @@ impl Parser {
     }
 
     fn add_auto_fields(&self, class: &mut Class, mut pos: usize) {
-
         for field in AUTO_FIELDS {
-
-            class.fields.insert(field.to_string(), Field {
-                name: field.to_string(),
-                label: field.to_string(),
-                datatype: DataType::Bool,
-                i18n: false,
-                array_pos: pos,
-                is_virtual: true,
-            });
+            class.fields.insert(
+                field.to_string(),
+                Field {
+                    name: field.to_string(),
+                    label: field.to_string(),
+                    datatype: DataType::Bool,
+                    i18n: false,
+                    array_pos: pos,
+                    is_virtual: true,
+                },
+            );
 
             pos += 1;
         }
     }
 
     fn add_field(&self, class: &mut Class, pos: usize, node: &roxmltree::Node) {
-
         let label = match node.attribute((OILS_NS_REPORTER, "label")) {
             Some(l) => l.to_string(),
             None => "".to_string(),
         };
 
-        let datatype: DataType =
-            match node.attribute((OILS_NS_REPORTER, "datatype")) {
+        let datatype: DataType = match node.attribute((OILS_NS_REPORTER, "datatype")) {
             Some(dt) => dt.into(),
             None => DataType::Text,
         };
@@ -274,7 +281,6 @@ impl Parser {
     }
 
     fn add_link(&self, class: &mut Class, node: &roxmltree::Node) {
-
         let reltype: RelType = match node.attribute("reltype") {
             Some(rt) => rt.into(),
             None => RelType::Unset,
@@ -301,15 +307,14 @@ impl Parser {
     ///
     /// Includes a _classname key with the IDL class.
     fn array_to_hash(&self, class: &str, value: &json::JsonValue) -> json::JsonValue {
-
         let fields = &self.classes.get(class).unwrap().fields;
 
         let mut hash = json::JsonValue::new_object();
 
-        hash.insert(CLASSNAME_KEY, json::from(class));
+        hash.insert(CLASSNAME_KEY, json::from(class)).ok();
 
         for (name, field) in fields {
-            hash.insert(name, value[field.array_pos].clone());
+            hash.insert(name, value[field.array_pos].clone()).ok();
         }
 
         hash
@@ -318,7 +323,6 @@ impl Parser {
     /// Converts and IDL-classed hash into an IDL-classed array, whose
     /// array positions match the IDL field positions.
     fn hash_to_array(&self, class: &str, hash: &json::JsonValue) -> json::JsonValue {
-
         let fields = &self.classes.get(class).unwrap().fields;
 
         // Translate the fields hash into a sorted array
@@ -328,7 +332,7 @@ impl Parser {
         let mut array = json::JsonValue::new_array();
 
         for field in sorted {
-            array.push(hash[&field.name].clone());
+            array.push(hash[&field.name].clone()).ok();
         }
 
         array
@@ -336,44 +340,38 @@ impl Parser {
 }
 
 impl DataSerializer for Parser {
-
     /// Creates a clone of the provided JsonValue, replacing any
     /// IDL-classed arrays with classed hashes.
     fn unpack(&self, value: &json::JsonValue) -> json::JsonValue {
-
-        if !value.is_array() && !value.is_object() { return value.clone(); }
+        if !value.is_array() && !value.is_object() {
+            return value.clone();
+        }
 
         let obj: json::JsonValue;
 
         if let Some(unpacked) = classified::ClassifiedJson::declassify(value) {
-
             if unpacked.json().is_array() {
                 obj = self.array_to_hash(unpacked.class(), unpacked.json());
             } else {
                 panic!("IDL-encoded objects should be arrays");
             }
-
         } else {
-
             obj = value.clone();
         }
 
         if obj.is_array() {
-
             let mut arr = json::JsonValue::new_array();
 
             for child in obj.members() {
-                arr.push(self.unpack(&child));
+                arr.push(self.unpack(&child)).ok();
             }
 
             return arr;
-
         } else if obj.is_object() {
-
             let mut hash = json::JsonValue::new_object();
 
             for (key, val) in obj.entries() {
-                hash.insert(key, self.unpack(&val));
+                hash.insert(key, self.unpack(&val)).ok();
             }
 
             return hash;
@@ -382,49 +380,43 @@ impl DataSerializer for Parser {
         obj
     }
 
-
     /// Creates a clone of the provided JsonValue, replacing any
     /// IDL-classed hashes with IDL-classed arrays.
     fn pack(&self, value: &json::JsonValue) -> json::JsonValue {
-
-        if !value.is_array() && !value.is_object() { return value.clone(); }
+        if !value.is_array() && !value.is_object() {
+            return value.clone();
+        }
 
         if value.is_object() && value.has_key(CLASSNAME_KEY) {
-
             let class = value[CLASSNAME_KEY].as_str().unwrap();
             let array = self.hash_to_array(&class, &value);
 
             let mut new_arr = json::JsonValue::new_array();
 
             for child in array.members() {
-                new_arr.push(self.pack(&child));
+                new_arr.push(self.pack(&child)).ok();
             }
 
             return classified::ClassifiedJson::classify(&new_arr, &class);
         }
 
         if value.is_array() {
-
             let mut arr = json::JsonValue::new_array();
 
             for child in value.members() {
-                arr.push(self.pack(&child));
+                arr.push(self.pack(&child)).ok();
             }
 
             arr
-
         } else if value.is_object() {
-
             let mut hash = json::JsonValue::new_object();
 
             for (key, val) in value.entries() {
-                hash.insert(key, self.pack(&val));
+                hash.insert(key, self.pack(&val)).ok();
             }
 
             hash
-
         } else {
-
             value.clone() // should not get here
         }
     }
