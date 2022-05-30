@@ -5,9 +5,7 @@ use opensrf::conf::ClientConfig;
 fn main() {
     let mut conf = ClientConfig::new();
 
-    //conf.load_file("conf/opensrf_client.yml").expect("Error loading config");
-
-    conf.load_xml_file("/openils/conf/opensrf_core.xml", "service");
+    conf.load_file("conf/opensrf_client.yml").expect("Error loading config");
 
     let parser = idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
 
