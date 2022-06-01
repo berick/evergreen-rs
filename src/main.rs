@@ -16,29 +16,6 @@ fn main() {
 
     let ses = client.session("open-ils.cstore");
 
-    /*
-    let params = vec![
-        json::from(1),
-        json::object! {
-            flesh: 1,
-            flesh_fields: json::object!{
-                au: vec!["home_ou"]
-            }
-        },
-    ];
-
-    let req = client
-        .request(&ses, "open-ils.cstore.direct.actor.user.retrieve", params)
-        .unwrap();
-
-    if let Some(user) = client.recv_one(&req, 10).unwrap() {
-        println!(
-            "Fetched user id={} usrname={} homeorg={}",
-            user["id"], user["usrname"], user["home_ou"]["shortname"]
-        );
-    }
-    */
-
     let params = vec![
         json::object! {
             id: vec![
@@ -55,9 +32,11 @@ fn main() {
         },
     ];
 
+    // request() consumes its params; clone these so we can use them twice
     let params2 = params.clone();
 
-    client.connect(&ses);
+    // optional -- testing
+    client.connect(&ses).expect("Connect failed");
 
     let req = client
         .request(&ses, "open-ils.cstore.direct.actor.user.search", params)
@@ -83,10 +62,11 @@ fn main() {
         }
     }
 
-    client.disconnect(&ses);
+    // only needed if connect() is called.
+    client.disconnect(&ses).expect("Disconnect failed");
 
     // Remove session data from the local cache so it doesn't
     // slowly build over time.
-    client.cleanup(&ses);
+    client.cleanup(&ses); // Required when done w/ a session
 }
 
