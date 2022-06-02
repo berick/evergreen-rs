@@ -5,12 +5,12 @@ use opensrf::conf::ClientConfig;
 fn main() {
     let mut conf = ClientConfig::new();
 
-    conf.load_file("conf/opensrf_client.yml").expect("Error loading config");
+    conf.load_file("conf/opensrf_client.yml")
+        .expect("Error loading config");
 
     let parser = idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
 
-    let mut client = Client::new(conf.bus_config())
-        .expect("Cannot connect to OpenSRF Bus");
+    let mut client = Client::new(conf.bus_config()).expect("Cannot connect to OpenSRF Bus");
 
     client.serializer = Some(&parser);
 
@@ -42,23 +42,40 @@ fn main() {
         .request(&ses, "open-ils.cstore.direct.actor.user.search", params)
         .expect("Cannot create OpenSRF request");
 
-    while !client.complete(&req) {
-        match client.recv(&req, 10).unwrap() {
-            Some(user) => println!("{} {} home_ou={}",
-                user["id"], user["usrname"], user["home_ou"]["name"]),
-            None => break // timeout or complete
-        }
+    // The fast-and-loose way that can lead to a (possibly unwanted) panic
+    // and/or a request timeout appearing as if the request is complete.
+    while let Some(user) = client.recv(&req, 10).expect("recv() failed") {
+        println!(
+            "{} {} home_ou={}",
+            user["id"], user["usrname"], user["home_ou"]["name"]
+        );
     }
 
     let req = client
         .request(&ses, "open-ils.cstore.direct.actor.user.search", params2)
         .expect("Cannot create OpenSRF request");
 
+    // The more verbose, all hands on deck approach.
     while !client.complete(&req) {
-        match client.recv(&req, 10).unwrap() {
-            Some(user) => println!("{} {} home_ou={}",
-                user["id"], user["usrname"], user["home_ou"]["name"]),
-            None => break // timeout or complete
+        match client.recv(&req, 10) {
+            Ok(recv_op) => {
+                match recv_op {
+                    Some(user) => {
+                        println!(
+                            "{} {} home_ou={}",
+                            user["id"], user["usrname"], user["home_ou"]["name"]
+                        );
+                    }
+                    None => {
+                        // Could be a timeout OR the request just completed.
+                        // Let the base while {} determine.
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("recv() returned an error: {}", e);
+                break;
+            }
         }
     }
 
@@ -69,4 +86,3 @@ fn main() {
     // slowly build over time.
     client.cleanup(&ses); // Required when done w/ a session
 }
-
