@@ -84,5 +84,5 @@ fn main() {
 
     // Remove session data from the local cache so it doesn't
     // slowly build over time.
-    client.cleanup(&ses); // Required when done w/ a session
+    client.cleanup(&ses); // Required
 }
