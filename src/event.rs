@@ -22,6 +22,10 @@ impl fmt::Display for EgEvent {
             s = s + " -> " + d;
         }
 
+        if let Some(ref p) = self.ilsperm {
+            s = format!("{} {}@{}", s, p, self.ilspermloc);
+        }
+
         if let Some(ref n) = self.note {
             s = s + "\n" + n;
         }
@@ -32,6 +36,72 @@ impl fmt::Display for EgEvent {
 
 impl EgEvent {
 
+    pub fn code(&self) -> isize {
+        self.code
+    }
+
+    pub fn textcode(&self) -> &str {
+        &self.textcode
+    }
+
+    pub fn payload(&self) -> &json::JsonValue {
+        &self.payload
+    }
+
+    pub fn desc(&self) -> Option<&str> {
+        self.desc.as_deref()
+    }
+
+    pub fn debug(&self) -> Option<&str> {
+        self.debug.as_deref()
+    }
+
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
+    }
+
+    pub fn servertime(&self) -> Option<&str> {
+        self.servertime.as_deref()
+    }
+
+    pub fn ilsperm(&self) -> Option<&str> {
+        self.ilsperm.as_deref()
+    }
+
+    pub fn ilspermloc(&self) -> isize {
+        self.ilspermloc
+    }
+
+    pub fn success(&self) -> bool {
+        self.success
+    }
+
+
+    /// Parses a JsonValue and optionally returns an EgEvent.
+    ///
+    /// ```
+    /// use json;
+    /// use evergreen::event::EgEvent;
+    ///
+    /// let jv = json::object! {
+    ///     code: json::from(100),
+    ///     textcode: json::from("SUCCESS"),
+    ///     ilsperm: json::from("STAFF_LOGIN"),
+    ///     ilspermloc: 1
+    /// };
+    ///
+    /// let evt = EgEvent::parse(Some(jv)).expect("Event Parsing Failed");
+    /// assert!(evt.success());
+    ///
+    /// assert_eq!(format!("{}", evt), String::from("Event: -1:SUCCESS STAFF_LOGIN@1"));
+    ///
+    /// let jv2 = json::object! {
+    ///     howdy: json::from(123)
+    /// };
+    ///
+    /// let evt_op = EgEvent::parse(Some(jv2));
+    /// assert!(evt_op.is_none());
+    /// ```
     pub fn parse(thing: Option<json::JsonValue>) -> Option<EgEvent> {
 
         if thing.is_none() { return None; }
