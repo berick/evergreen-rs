@@ -1,6 +1,7 @@
-use evergreen::idl;
-use opensrf::client::Client;
-use opensrf::conf::ClientConfig;
+use evergreen as eg;
+use opensrf as osrf;
+use osrf::client::Client;
+use osrf::conf::ClientConfig;
 
 fn main() {
     let mut conf = ClientConfig::new();
@@ -8,7 +9,7 @@ fn main() {
     conf.load_file("conf/opensrf_client.yml")
         .expect("Error loading config");
 
-    let parser = idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
+    let parser = eg::idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
 
     let mut client = Client::new(conf.bus_config()).expect("Cannot connect to OpenSRF Bus");
 
@@ -85,4 +86,16 @@ fn main() {
     // Remove session data from the local cache so it doesn't
     // slowly build over time.
     client.cleanup(&ses); // Required
+
+    let args = eg::auth::AuthLoginArgs {
+        username: String::from("admin"),
+        password: String::from("demo123"),
+        login_type: String::from("opac"),
+        workstation: None,
+    };
+
+    let auth_ses = eg::auth::AuthSession::login(&mut client, &args).expect("Login Error");
+
+    println!("Logged in and go authtoken: {}", auth_ses.token());
+
 }

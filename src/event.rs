@@ -81,7 +81,8 @@ impl EgEvent {
     ///
     /// ```
     /// use json;
-    /// use evergreen::event::EgEvent;
+    /// use evergreen as eg;
+    /// use eg::event::EgEvent;
     ///
     /// let jv = json::object! {
     ///     code: json::from(100),
