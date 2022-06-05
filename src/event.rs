@@ -91,7 +91,7 @@ impl EgEvent {
     ///     ilspermloc: 1
     /// };
     ///
-    /// let evt = EgEvent::parse(Some(jv)).expect("Event Parsing Failed");
+    /// let evt = EgEvent::parse(&jv).expect("Event Parsing Failed");
     /// assert!(evt.success());
     ///
     /// assert_eq!(format!("{}", evt), String::from("Event: -1:SUCCESS STAFF_LOGIN@1"));
@@ -100,14 +100,10 @@ impl EgEvent {
     ///     howdy: json::from(123)
     /// };
     ///
-    /// let evt_op = EgEvent::parse(Some(jv2));
+    /// let evt_op = EgEvent::parse(&jv2);
     /// assert!(evt_op.is_none());
     /// ```
-    pub fn parse(thing: Option<json::JsonValue>) -> Option<EgEvent> {
-
-        if thing.is_none() { return None; }
-
-        let jv: json::JsonValue = thing.unwrap();
+    pub fn parse(jv: &json::JsonValue) -> Option<EgEvent> {
 
         if !jv.is_object() { return None; }
 

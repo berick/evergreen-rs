@@ -80,7 +80,7 @@ fn main() {
         }
     }
 
-    // only needed if connect() is called.
+    // only needed if connect() is called above.
     client.disconnect(&ses).expect("Disconnect failed");
 
     // Remove session data from the local cache so it doesn't
@@ -90,7 +90,7 @@ fn main() {
     let args = eg::auth::AuthLoginArgs {
         username: String::from("admin"),
         password: String::from("demo123"),
-        login_type: String::from("opac"),
+        login_type: String::from("temp"),
         workstation: None,
     };
 

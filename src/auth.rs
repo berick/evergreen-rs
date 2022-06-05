@@ -1,6 +1,7 @@
 use json;
 use opensrf::client::Client;
 use super::event;
+use super::error::Error;
 
 pub struct AuthLoginArgs {
     pub username: String,
@@ -35,8 +36,7 @@ pub struct AuthSession {
 
 impl AuthSession {
 
-    // TODO error: types, etc.
-    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<AuthSession, ()> {
+    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<AuthSession, Error> {
 
         let mut params = vec![
             json::object! {
@@ -52,49 +52,63 @@ impl AuthSession {
 
         let ses = client.session("open-ils.auth");
 
-        let req = client
-            .request(&ses, "open-ils.auth.login",  params)
-            .expect("Cannot create OpenSRF request"); // TODO error:
-            // TODO ses cleanup has to happen
-
-        let evt = match client.recv(&req, 60) { // TODO timeout
-            Ok(op) => {
-                match event::EgEvent::parse(op) {
-                    Some(evt) => evt,
-                    None => {
-                        client.cleanup(&ses);
-                        return Err(()); // TODO
-                    }
-                }
-            },
+        let req = match client.request(&ses, "open-ils.auth.login",  params) {
+            Ok(r) => r,
             Err(e) => {
                 client.cleanup(&ses);
-                return Err(()); // TODO
+                return Err(Error::OpenSrfError(e));
             }
         };
 
-        // TODO avoid early exit so we can always cleanup
-        client.cleanup(&ses);
+        // TODO global default timeout? / redo to accep None
+        let recv_op = match client.recv(&req, 60) {
+            Ok(op) => op,
+            Err(e) => {
+                client.cleanup(&ses);
+                return Err(Error::OpenSrfError(e));
+            }
+        };
+
+        client.cleanup(&ses); // All done w/ this session.
+
+        let json_val = match recv_op {
+            Some(v) => v,
+            None => {
+                return Err(Error::LoginFailedError(
+                    Some(format!("No response resturned"))));
+            }
+        };
+
+        let evt = match event::EgEvent::parse(&json_val) {
+            Some(e) => e,
+            None => {
+                return Err(Error::LoginFailedError(
+                    Some(format!("Unexpected response: {:?}", json_val))));
+            }
+        };
 
         if !evt.success() {
-            return Err(()); // TODO
+            return Err(Error::LoginFailedError(None));
         }
 
         if !evt.payload().is_object() {
-            return Err(()); // TODO
+            return Err(Error::LoginFailedError(
+                Some(format!("Unexpected response: {}", evt))));
         }
 
         let token = match evt.payload()["authtoken"].as_str() {
             Some(t) => String::from(t),
             None => {
-                return Err(()); // TODO
+                return Err(Error::LoginFailedError(
+                    Some(format!("Unexpected response: {}", evt))));
             }
         };
 
         let authtime = match evt.payload()["authtime"].as_usize() {
             Some(t) => t,
             None => {
-                return Err(()); // TODO
+                return Err(Error::LoginFailedError(
+                    Some(format!("Unexpected response: {}", evt))));
             }
         };
 
