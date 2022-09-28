@@ -5,6 +5,8 @@ use roxmltree;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
+use std::rc::Rc;
+use std::cell::{Ref, RefCell};
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const _OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
@@ -134,6 +136,21 @@ pub struct Class {
     links: HashMap<String, Link>,
 }
 
+impl Class {
+    pub fn class(&self) -> &str {
+        &self.class
+    }
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+    pub fn fields(&self) -> &HashMap<String, Field> {
+        &self.fields
+    }
+    pub fn links(&self) -> &HashMap<String, Link> {
+        &self.links
+    }
+}
+
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -152,21 +169,20 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new() -> Self {
-        Parser {
-            classes: HashMap::new(),
-        }
+
+    pub fn classes(&self) -> &HashMap<String, Class> {
+        &self.classes
     }
 
-    pub fn parse_file(file_name: &str) -> Parser {
+    pub fn parse_file(file_name: &str) -> ParserHandle {
         let xml = fs::read_to_string(file_name).unwrap();
         Parser::parse_string(&xml)
     }
 
-    pub fn parse_string(xml: &str) -> Parser {
+    pub fn parse_string(xml: &str) -> ParserHandle {
         let doc = roxmltree::Document::parse(xml).unwrap();
 
-        let mut parser = Parser::new();
+        let mut parser = Parser { classes: HashMap::new() };
 
         for root_node in doc.root().children() {
             if root_node.tag_name().name() == "IDL" {
@@ -180,7 +196,7 @@ impl Parser {
             }
         }
 
-        parser
+        ParserHandle { parser: Rc::new(RefCell::new(parser)) }
     }
 
     fn add_class(&mut self, node: &roxmltree::Node) {
@@ -421,3 +437,18 @@ impl DataSerializer for Parser {
         }
     }
 }
+
+pub struct ParserHandle {
+    parser: Rc<RefCell<Parser>>,
+}
+
+impl ParserHandle {
+    pub fn as_serializer(&self) -> Rc<RefCell<dyn DataSerializer>> {
+        self.parser.clone()
+    }
+
+    pub fn parser(&self) -> Ref<Parser> {
+        self.parser.borrow()
+    }
+}
+

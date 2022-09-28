@@ -1,7 +1,9 @@
 use json;
-use opensrf::client::Client;
+use opensrf::client::ClientHandle;
 use super::event;
 use super::error::Error;
+
+const LOGIN_TIMEOUT: i32 = 30;
 
 pub struct AuthLoginArgs {
     pub username: String,
@@ -36,13 +38,13 @@ pub struct AuthSession {
 
 impl AuthSession {
 
-    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<AuthSession, Error> {
+    pub fn login(client: &mut ClientHandle, args: &AuthLoginArgs) -> Result<AuthSession, String> {
 
         let mut params = vec![
             json::object! {
-                username: json::from(args.username()),
-                password: json::from(args.password()),
-                type: json::from(args.login_type())
+                username: args.username(),
+                password: args.password(),
+                type: args.login_type()
             }
         ];
 
@@ -50,65 +52,40 @@ impl AuthSession {
             params[0]["workstation"] = json::from(w);
         }
 
-        let ses = client.session("open-ils.auth");
+        let mut ses = client.session("open-ils.auth");
+        let mut req = ses.request("open-ils.auth.login",  params)?;
 
-        let req = match client.request(&ses, "open-ils.auth.login",  params) {
-            Ok(r) => r,
-            Err(e) => {
-                client.cleanup(&ses);
-                return Err(Error::OpenSrfError(e));
-            }
-        };
-
-        // TODO global default timeout? / redo to accep None
-        let recv_op = match client.recv(&req, 60) {
-            Ok(op) => op,
-            Err(e) => {
-                client.cleanup(&ses);
-                return Err(Error::OpenSrfError(e));
-            }
-        };
-
-        client.cleanup(&ses); // All done w/ this session.
-
-        let json_val = match recv_op {
+        let json_val = match req.recv(LOGIN_TIMEOUT)? {
             Some(v) => v,
-            None => {
-                return Err(Error::LoginFailedError(
-                    Some(format!("No response resturned"))));
-            }
+            None => { return Err("Login Timed Out".to_string()); }
         };
 
         let evt = match event::EgEvent::parse(&json_val) {
             Some(e) => e,
             None => {
-                return Err(Error::LoginFailedError(
-                    Some(format!("Unexpected response: {:?}", json_val))));
+                return Err(format!("Unexpected response: {:?}", json_val));
             }
         };
 
         if !evt.success() {
-            return Err(Error::LoginFailedError(None));
+            return Err(format!("Non-success event returned"));
         }
 
         if !evt.payload().is_object() {
-            return Err(Error::LoginFailedError(
-                Some(format!("Unexpected response: {}", evt))));
+            return Err(format!("Unexpected response: {}", evt));
         }
 
         let token = match evt.payload()["authtoken"].as_str() {
             Some(t) => String::from(t),
             None => {
-                return Err(Error::LoginFailedError(
-                    Some(format!("Unexpected response: {}", evt))));
+                return Err(format!("Unexpected response: {}", evt));
             }
         };
 
         let authtime = match evt.payload()["authtime"].as_usize() {
             Some(t) => t,
             None => {
-                return Err(Error::LoginFailedError(
-                    Some(format!("Unexpected response: {}", evt))));
+                return Err(format!("Unexpected response: {}", evt));
             }
         };
 

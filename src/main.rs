@@ -2,28 +2,31 @@ use evergreen as eg;
 use opensrf as osrf;
 use osrf::client::Client;
 use osrf::conf::ClientConfig;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 fn main() {
     let mut conf = ClientConfig::new();
 
-    conf.load_file("conf/opensrf_client.yml")
-        .expect("Error loading config");
+    conf.load_file("conf/opensrf_client.yml").expect("Error loading config");
 
-    let parser = eg::idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
+    let idl = eg::idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
 
-    let mut client = Client::new(conf.bus_config()).expect("Cannot connect to OpenSRF Bus");
+    // Wrap IDL in an Rc() so we can share refs to it for various purposes
+    // It's too big to clone and in practice will never be freed anyway.
+    //let serializer: Rc<RefCell<dyn osrf::client::DataSerializer>> = idlref.clone();
 
-    client.serializer = Some(&parser);
+    let mut client = Client::new(conf).expect("Cannot connect to OpenSRF Bus");
 
-    let ses = client.session("open-ils.cstore");
+    client.set_serializer(idl.as_serializer());
+
+    println!("parser class count = {}", idl.parser().classes().len());
+
+    let mut ses = client.session("open-ils.cstore");
 
     let params = vec![
         json::object! {
-            id: vec![
-                json::from(1),
-                json::from(2),
-                json::from(3)
-            ]
+            id: vec![1, 2, 3]
         },
         json::object! {
             flesh: 1,
@@ -37,7 +40,22 @@ fn main() {
     let params2 = params.clone();
 
     // optional -- testing
-    client.connect(&ses).expect("Connect failed");
+    ses.connect().unwrap();
+
+    let mut req =
+        ses.request("open-ils.cstore.direct.actor.user.search", params).unwrap();
+
+    while let Some(user) = req.recv(10).unwrap() {
+        println!(
+            "{} {} home_ou={}",
+            user["id"], user["usrname"], user["home_ou"]["name"]
+        );
+    }
+
+    ses.disconnect();
+
+    /*
+
 
     let req = client
         .request(&ses, "open-ils.cstore.direct.actor.user.search", params)
@@ -46,10 +64,6 @@ fn main() {
     // The fast-and-loose way that can lead to a (possibly unwanted) panic
     // and/or a request timeout appearing as if the request is complete.
     while let Some(user) = client.recv(&req, 10).expect("recv() failed") {
-        println!(
-            "{} {} home_ou={}",
-            user["id"], user["usrname"], user["home_ou"]["name"]
-        );
     }
 
     let req = client
@@ -96,6 +110,7 @@ fn main() {
 
     let auth_ses = eg::auth::AuthSession::login(&mut client, &args).expect("Login Error");
 
-    println!("Logged in and go authtoken: {}", auth_ses.token());
+    println!("Logged in and got authtoken: {}", auth_ses.token());
+    */
 
 }
