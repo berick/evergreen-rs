@@ -18,7 +18,7 @@ fn main() {
 
     println!("parser class count = {}", idl.parser().classes().len());
 
-    let mut ses = client.session("open-ils.storage");
+    let mut ses = client.session("open-ils.cstore");
 
     let mut req = ses.request("opensrf.system.echo", vec!["howdy", "world"]).unwrap();
 
@@ -45,19 +45,16 @@ fn main() {
     //ses.connect().unwrap();
 
     let mut req =
-        ses.request("open-ils.storage.direct.actor.user.search", params).unwrap();
+        ses.request("open-ils.cstore.direct.actor.user.search", params).unwrap();
 
     while let Some(user) = req.recv(10).unwrap() {
         println!(
             "{} {} home_ou={}",
-            user["id"], user["usrname"], user["home_ou"]
-            //user["id"], user["usrname"], user["home_ou"]["name"]
+            user["id"], user["usrname"], user["home_ou"]["name"]
         );
     }
 
-    //ses.disconnect();
-
-    /*
+    //ses.disconnect().unwrap(); // Only needed if ses.connect() is called.
 
     let args = eg::auth::AuthLoginArgs {
         username: String::from("admin"),
@@ -66,9 +63,7 @@ fn main() {
         workstation: None,
     };
 
-    let auth_ses = eg::auth::AuthSession::login(&mut client, &args).expect("Login Error");
+    let auth_ses = eg::auth::AuthSession::login(&mut client, &args).unwrap();
 
     println!("Logged in and got authtoken: {}", auth_ses.token());
-    */
-
 }
