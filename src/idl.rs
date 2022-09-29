@@ -438,6 +438,9 @@ impl DataSerializer for Parser {
     }
 }
 
+/// Wrap the IDL Parser in an Rc() so we can share refs to it for various
+/// purposes.  It's too big to clone and in practice will never be freed,
+/// so no need to futz with lifetimes.
 pub struct ParserHandle {
     parser: Rc<RefCell<Parser>>,
 }
