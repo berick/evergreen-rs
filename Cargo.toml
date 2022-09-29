@@ -15,3 +15,5 @@ log = "0.4.14"
 log4rs = "1.0.0"
 json = "0.12.4"
 
+[[example]]
+name = "basic-requests"

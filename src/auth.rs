@@ -1,7 +1,6 @@
 use json;
 use opensrf::client::ClientHandle;
 use super::event;
-use super::error::Error;
 
 const LOGIN_TIMEOUT: i32 = 30;
 
