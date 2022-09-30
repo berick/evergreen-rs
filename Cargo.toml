@@ -18,5 +18,8 @@ json = "0.12.4"
 postgres = "~0.19"
 getopts = "~0.2"
 
+# Sometimes this is just simpler than log4rs
+env_logger = "~0.9"
+
 [[example]]
 name = "basic-requests"
