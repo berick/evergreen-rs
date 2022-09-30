@@ -7,9 +7,10 @@ use std::fmt;
 use std::fs;
 use std::rc::Rc;
 use std::cell::{Ref, RefCell};
+use log::warn;
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
-const _OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
+const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
 const OILS_NS_PERSIST: &str = "http://open-ils.org/spec/opensrf/IDL/persistence/v1";
 const OILS_NS_REPORTER: &str = "http://open-ils.org/spec/opensrf/IDL/reporter/v1";
 
@@ -86,6 +87,27 @@ impl fmt::Display for Field {
     }
 }
 
+impl Field {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+    pub fn datatype(&self) -> &DataType {
+        &self.datatype
+    }
+    pub fn i18n(&self) -> bool {
+        self.i18n
+    }
+    pub fn array_pos(&self) -> usize {
+        self.array_pos
+    }
+    pub fn is_virtual(&self) -> bool {
+        self.is_virtual
+    }
+}
+
 pub enum RelType {
     HasA,
     HasMany,
@@ -132,8 +154,12 @@ pub struct Link {
 pub struct Class {
     class: String,
     label: String,
+    field_safe: bool,
+    read_only: bool,
+    fieldmapper: Option<String>,
     fields: HashMap<String, Field>,
     links: HashMap<String, Link>,
+    tablename: Option<String>,
 }
 
 impl Class {
@@ -148,6 +174,9 @@ impl Class {
     }
     pub fn links(&self) -> &HashMap<String, Link> {
         &self.links
+    }
+    pub fn tablename(&self) -> Option<&str> {
+        self.tablename.as_deref()
     }
 }
 
@@ -207,7 +236,31 @@ impl Parser {
             None => name.to_string(),
         };
 
+        let tablename = match node.attribute((OILS_NS_PERSIST, "tablename")) {
+            Some(v) => Some(v.to_string()),
+            None => None,
+        };
+
+        let fieldmapper = match node.attribute((OILS_NS_OBJ, "fieldmapper")) {
+            Some(v) => Some(v.to_string()),
+            None => None,
+        };
+
+        let field_safe = match node.attribute((OILS_NS_PERSIST, "field_safe")) {
+            Some(v) => v.to_lowercase().eq("true"),
+            None => false
+        };
+
+        let read_only = match node.attribute((OILS_NS_PERSIST, "readonly")) {
+            Some(v) => v.to_lowercase().eq("true"),
+            None => false
+        };
+
         let mut class = Class {
+            tablename,
+            fieldmapper,
+            field_safe,
+            read_only,
             class: name.to_string(),
             label: label,
             fields: HashMap::new(),
@@ -307,12 +360,36 @@ impl Parser {
             None => None,
         };
 
+        let field = match node.attribute("field") {
+            Some(v) => v.to_string(),
+            None => {
+                warn!("IDL links is missing 'field' attribute");
+                return;
+            }
+        };
+
+        let key = match node.attribute("key") {
+            Some(v) => v.to_string(),
+            None => {
+                warn!("IDL links is missing 'key' attribute");
+                return;
+            }
+        };
+
+        let lclass = match node.attribute("class") {
+            Some(v) => v.to_string(),
+            None => {
+                warn!("IDL links is missing 'class' attribute");
+                return;
+            }
+        };
+
         let link = Link {
-            field: node.attribute("field").unwrap().to_string(),
-            reltype: reltype,
-            key: node.attribute("key").unwrap().to_string(),
+            field,
+            key,
             map: map,
-            class: node.attribute("class").unwrap().to_string(),
+            class: lclass,
+            reltype: reltype,
         };
 
         class.links.insert(link.field.to_string(), link);
@@ -452,6 +529,10 @@ impl ParserHandle {
 
     pub fn parser(&self) -> Ref<Parser> {
         self.parser.borrow()
+    }
+
+    pub fn to_shared(&self) -> Rc<RefCell<Parser>> {
+        self.parser.clone()
     }
 }
 
