@@ -1,10 +1,10 @@
 ///! Create, connect, and manage database connections.
 use getopts;
-use log::{debug, error};
+use log::{debug};
 use postgres as pg;
 use std::env;
 use std::rc::Rc;
-use std::cell::{Ref, RefCell};
+use std::cell::{RefCell};
 
 const DEFAULT_DB_PORT: u16 = 5432;
 const DEFAULT_DB_HOST: &str = "localhost";

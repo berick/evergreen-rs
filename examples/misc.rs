@@ -3,7 +3,7 @@ use evergreen as eg;
 use eg::db::DatabaseConnection;
 use eg::idldb::Translator;
 use std::env;
-use json;
+use json::JsonValue;
 
 fn main() -> Result<(), String> {
     env_logger::init();
@@ -23,10 +23,16 @@ fn main() -> Result<(), String> {
 
     let translator = Translator::new(idl, db);
 
-    let results = translator.search("aou", &json::object!{id: 1})?;
+    let results = translator.search("aou", &json::object!{id: 1, ou_type: [1, 2, 3]})?;
 
     for org in results {
-        println!("org = {org:?}");
+        println!("org = {}\n", org.dump());
+    }
+
+    let results = translator.search("aou", &json::object!{parent_ou: JsonValue::Null})?;
+
+    for org in results {
+        println!("org = {}\n", org.dump());
     }
 
     Ok(())

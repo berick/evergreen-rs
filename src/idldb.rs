@@ -1,11 +1,11 @@
 ///! Tools for translating between IDL objects and Database rows.
-use log::{trace, error};
+use log::{trace};
 use json::JsonValue;
 use super::db;
 use super::idl;
 use postgres as pg;
 use std::rc::Rc;
-use std::cell::{Ref, RefCell};
+use std::cell::{RefCell};
 
 pub struct Translator {
     idl: Rc<RefCell<idl::Parser>>,
@@ -74,6 +74,21 @@ impl Translator {
         String::from(&sql[0..sql.len() - 1]) // Trim final ","
     }
 
+    pub fn json_literal_to_sql_value(&self, j: &JsonValue) -> Option<String> {
+        // TODO escape strings
+        match j {
+            JsonValue::Number(n) => Some(n.to_string()),
+            JsonValue::String(s) => Some(format!("'{}'", s.replace("'", "''"))),
+            JsonValue::Short(s) => Some(format!("'{}'", s.replace("'", "''"))),
+            JsonValue::Null => Some("NULL".to_string()),
+            JsonValue::Boolean(b) => match b {
+                true => Some("TRUE".to_string()),
+                false => Some("FALSE".to_string()),
+            }
+            _ => None,
+        }
+    }
+
     pub fn compile_class_filter(&self,
         class: &idl::Class, filter: &JsonValue) -> Result<String, String> {
 
@@ -84,32 +99,35 @@ impl Translator {
 
         let mut sql = String::from("WHERE");
 
+        let mut first = true;
         for (field, subq) in filter.entries() {
             trace!("compile_class_filter adding filter on field: {field}");
+
+            if class.fields().iter().filter(|(n, _)| n.eq(&field)).next().is_none() {
+                return Err(format!("Cannot query field '{field}' on class '{}'", class.class()));
+            }
+
+            let literal = self.json_literal_to_sql_value(subq);
+
+            if first {
+                first = false;
+            } else {
+                sql += " AND";
+            }
 
             sql += &format!(" {field}");
 
             match subq {
                 JsonValue::Object(o) => {
-                    // TODO
                 },
                 JsonValue::Array(a) => {
-                    // TODO
+                    sql += &self.compile_class_filter_array(a);
                 },
-                JsonValue::Number(n) => {
-                    sql += &format!(" = {n}");
+                JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Short(_) => {
+                    sql += &format!(" = {}", literal.unwrap());
                 },
-                JsonValue::String(s) => {
-                    sql += &format!(" = QUOTE_LITERAL({})", s);
-                },
-                JsonValue::Short(s) => {
-                    sql += &format!(" = QUOTE_LITERAL({})", s);
-                }
-                JsonValue::Boolean(b) => {
-                    sql += &format!(" IS {b}");
-                },
-                JsonValue::Null => {
-                    sql += " IS NULL";
+                JsonValue::Boolean(_) | JsonValue::Null => {
+                    sql += &format!(" IS {}", literal.unwrap());
                 },
             }
         }
@@ -117,16 +135,78 @@ impl Translator {
         Ok(sql)
     }
 
+    pub fn compile_class_filter_array(&self, a: &Vec<JsonValue>) -> String {
+        let mut sql = String::from(" IN (");
+        let mut first = true;
+        for m in a {
+            if let Some(v) = self.json_literal_to_sql_value(m) {
+                if first {
+                    first = false;
+                } else {
+                    sql += ", "
+                }
+                sql += &format!("{v}");
+            }
+        }
+        sql += ")";
+
+        sql
+    }
+
     pub fn row_to_idl(&self, class: &idl::Class, row: &pg::Row) -> Result<JsonValue, String> {
 
-        let mut idx = 0;
-        for (name, field) in class.fields() {
-            let value: &str = row.get(idx);
-            trace!("Row value {field}={value}");
-            idx += 1;
+        let mut obj = JsonValue::new_object();
+        obj[idl::CLASSNAME_KEY] = json::from(class.class());
+
+        let mut index = 0;
+
+        for (name, _) in class.fields().iter().filter(|(_, f)| !f.is_virtual()) {
+            obj[name] = self.col_value_to_json_value(row, index)?;
+            index += 1;
         }
 
-        Ok(JsonValue::Null)
+        Ok(obj)
+    }
+
+    pub fn col_value_to_json_value(&self, row: &pg::Row, index: usize) -> Result<JsonValue, String> {
+
+        let col_type = row.columns().get(index).map(|c| c.type_().name()).unwrap();
+
+        match col_type {
+            // JsonValue has From<Option<T>>
+
+            "bool" => {
+                let v: Option<bool> = row.get(index);
+                Ok(json::from(v))
+            }
+            "varchar" | "char(n)" | "text" | "name" | "timestamp" | "timestamptz" => {
+                let v: Option<String> = row.get(index);
+                Ok(json::from(v))
+            }
+            "int2" | "smallserial" | "smallint" => {
+                let v: Option<i16> = row.get(index);
+                Ok(json::from(v))
+            }
+            "int" | "int4" | "serial" => {
+                let v: Option<i32> = row.get(index);
+                Ok(json::from(v))
+            }
+            "int8" | "bigserial" | "bigint" => {
+                let v: Option<i64> = row.get(index);
+                Ok(json::from(v))
+            }
+            "float4" | "real" => {
+                let v: Option<f32> = row.get(index);
+                Ok(json::from(v))
+            }
+            "float8" | "double precision" => {
+                let v: Option<f64> = row.get(index);
+                Ok(json::from(v))
+            }
+            _ => {
+                Err(format!("Cannot parse SQL column result type={col_type}"))
+            }
+        }
     }
 }
 

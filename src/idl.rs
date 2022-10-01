@@ -15,8 +15,9 @@ const OILS_NS_PERSIST: &str = "http://open-ils.org/spec/opensrf/IDL/persistence/
 const OILS_NS_REPORTER: &str = "http://open-ils.org/spec/opensrf/IDL/reporter/v1";
 
 const AUTO_FIELDS: [&str; 3] = ["isnew", "ischanged", "isdeleted"];
-const CLASSNAME_KEY: &str = "_classname";
+pub const CLASSNAME_KEY: &str = "_classname";
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum DataType {
     Int,
     Float,
@@ -35,6 +36,7 @@ impl DataType {
     }
 }
 
+/*
 impl Into<&'static str> for DataType {
     fn into(self) -> &'static str {
         match self {
@@ -47,6 +49,7 @@ impl Into<&'static str> for DataType {
         }
     }
 }
+*/
 
 impl From<&str> for DataType {
     fn from(s: &str) -> Self {
@@ -68,6 +71,7 @@ impl fmt::Display for DataType {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     name: String,
     label: String,
@@ -108,6 +112,7 @@ impl Field {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum RelType {
     HasA,
     HasMany,
@@ -143,6 +148,7 @@ impl fmt::Display for RelType {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Link {
     field: String,
     reltype: RelType,
@@ -151,6 +157,7 @@ pub struct Link {
     class: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     class: String,
     label: String,
