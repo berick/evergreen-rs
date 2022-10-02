@@ -44,9 +44,6 @@ impl Translator {
         let select = self.compile_class_select(&class);
         let filter = self.compile_class_filter(&class, filter)?;
 
-        println!("compiled select: {select}");
-        println!("compiled filter: {filter}");
-
         let query = format!("{select} FROM {tablename} {filter}");
 
         let query_res = self.db.borrow_mut().client().query(&query[..], &[]);
@@ -75,7 +72,6 @@ impl Translator {
     }
 
     pub fn json_literal_to_sql_value(&self, j: &JsonValue) -> Option<String> {
-        // TODO escape strings
         match j {
             JsonValue::Number(n) => Some(n.to_string()),
             JsonValue::String(s) => Some(format!("'{}'", s.replace("'", "''"))),
@@ -89,6 +85,7 @@ impl Translator {
         }
     }
 
+    /// Generate a WHERE clause from a JSON query object for an IDL class.
     pub fn compile_class_filter(&self,
         class: &idl::Class, filter: &JsonValue) -> Result<String, String> {
 
@@ -107,7 +104,6 @@ impl Translator {
                 return Err(format!("Cannot query field '{field}' on class '{}'", class.class()));
             }
 
-            let literal = self.json_literal_to_sql_value(subq);
 
             if first {
                 first = false;
@@ -117,28 +113,63 @@ impl Translator {
 
             sql += &format!(" {field}");
 
-            match subq {
-                JsonValue::Object(o) => {
-                },
-                JsonValue::Array(a) => {
-                    sql += &self.compile_class_filter_array(a);
-                },
-                JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Short(_) => {
-                    sql += &format!(" = {}", literal.unwrap());
-                },
-                JsonValue::Boolean(_) | JsonValue::Null => {
-                    sql += &format!(" IS {}", literal.unwrap());
-                },
+            if subq.is_string() || subq.is_number() {
+
+                let literal = self.json_literal_to_sql_value(subq);
+                sql += &format!(" = {}", literal.unwrap());
+
+            } else if subq.is_boolean() || subq.is_null() {
+
+                let literal = self.json_literal_to_sql_value(subq);
+                sql += &format!(" IS {}", literal.unwrap());
+
+            } else if subq.is_array() {
+                sql += &self.compile_class_filter_array(&subq);
+
+            } else {
+                sql += &self.compile_class_filter_object(&subq)?;
             }
         }
 
         Ok(sql)
     }
 
-    pub fn compile_class_filter_array(&self, a: &Vec<JsonValue>) -> String {
+    /// Turn an object-based subquery into part of the WHERE AND.
+    pub fn compile_class_filter_object(&self, obj: &JsonValue) -> Result<String, String> {
+
+        let mut sql = String::new();
+
+        for (key, val) in obj.entries() {
+
+            let value = match self.json_literal_to_sql_value(val) {
+                Some(v) => v,
+                None => {
+                    return Err(format!("Arrays/Objects not supported here: {val:?}"));
+                }
+            };
+
+            let operand = key.to_uppercase();
+
+            match operand.as_str() {
+                "IS" | "IS NOT" | "<" | "<=" | ">" | ">=" | "<>" | "!=" => {},
+                _ => {
+                    return Err(format!("Unsupported operand: {operand}"));
+                }
+            }
+
+            sql += &format!(" {operand} {value}");
+        }
+
+        Ok(sql)
+    }
+
+    /// Turn an array-based subquery into part of the WHERE AND.
+    pub fn compile_class_filter_array(&self, a: &JsonValue) -> String {
+
         let mut sql = String::from(" IN (");
         let mut first = true;
-        for m in a {
+
+        for m in a.members() {
             if let Some(v) = self.json_literal_to_sql_value(m) {
                 if first {
                     first = false;
@@ -153,6 +184,7 @@ impl Translator {
         sql
     }
 
+    /// Maps a PG row into an IDL-based JsonValue;
     pub fn row_to_idl(&self, class: &idl::Class, row: &pg::Row) -> Result<JsonValue, String> {
 
         let mut obj = JsonValue::new_object();
@@ -209,6 +241,4 @@ impl Translator {
         }
     }
 }
-
-
 

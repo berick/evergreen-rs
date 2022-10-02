@@ -35,6 +35,11 @@ fn main() -> Result<(), String> {
         println!("org = {}\n", org.dump());
     }
 
+    for org in translator.search("aou", &json::object!{"id":{">":1}})? {
+        println!("org = {}\n", org.dump());
+    }
+
+
     Ok(())
 }
 
