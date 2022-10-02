@@ -200,6 +200,7 @@ impl Translator {
         Ok(obj)
     }
 
+    /// Translate a PG-typed row value into a JsonValue
     pub fn col_value_to_json_value(&self, row: &pg::Row, index: usize) -> Result<JsonValue, String> {
 
         let col_type = row.columns().get(index).map(|c| c.type_().name()).unwrap();
@@ -236,7 +237,7 @@ impl Translator {
                 Ok(json::from(v))
             }
             _ => {
-                Err(format!("Cannot parse SQL column result type={col_type}"))
+                Err(format!("Unsupported column type: {col_type}"))
             }
         }
     }

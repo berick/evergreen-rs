@@ -1,4 +1,5 @@
 use evergreen as eg;
+use eg::idl;
 use opensrf as osrf;
 use osrf::client::Client;
 use osrf::conf::ClientConfig;
@@ -8,15 +9,16 @@ fn main() -> Result<(), String> {
 
     conf.load_file("conf/opensrf_client.yml")?;
 
-    let idl = eg::idl::Parser::parse_file("/openils/conf/fm_IDL.xml");
+    let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
+    let idl = idl.to_shared();
 
     let mut client = Client::new(conf)?;
 
-    client.set_serializer(idl.as_serializer());
+    client.set_serializer(idl::Parser::as_serializer(&idl));
 
-    println!("parser class count = {}", idl.parser().classes().len());
+    println!("parser class count = {}", idl.borrow().classes().len());
 
-    let mut ses = client.session("open-ils.cstore");
+    let mut ses = client.session("open-ils.storage");
 
     let mut req = ses.request("opensrf.system.echo", vec!["howdy", "world"])?;
 
@@ -24,7 +26,7 @@ fn main() -> Result<(), String> {
         println!("Echo returned: {txt:?}");
     }
 
-    let method = "open-ils.cstore.direct.actor.user.search";
+    let method = "open-ils.storage.direct.actor.user.search";
 
     let params = vec![
         json::object! {
@@ -38,10 +40,7 @@ fn main() -> Result<(), String> {
         },
     ];
 
-    // optional -- testing
-    //ses.connect()?;
-
-    for idx in 0..9 {
+    for _ in 0..9 {
         // Iterator example
         for user in ses.sendrecv(method, params.clone())? {
             println!(
@@ -60,8 +59,6 @@ fn main() -> Result<(), String> {
             user["id"], user["usrname"], user["home_ou"]["name"]
         );
     }
-
-    //ses.disconnect()?; // Only needed if ses.connect() is called.
 
     let args = eg::auth::AuthLoginArgs {
         username: String::from("admin"),

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::rc::Rc;
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use log::warn;
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
@@ -206,17 +206,40 @@ pub struct Parser {
 
 impl Parser {
 
+    /// Create a ref to a DataSerializer suitable for OpenSRF
+    /// data packing and unpacking.
+    pub fn as_serializer(idlref: &Rc<RefCell<Parser>>) -> Rc<RefCell<dyn DataSerializer>> {
+        idlref.clone()
+    }
+
+    pub fn to_shared(self) -> Rc<RefCell<Parser>> {
+        Rc::new(RefCell::new(self))
+    }
+
     pub fn classes(&self) -> &HashMap<String, Class> {
         &self.classes
     }
 
-    pub fn parse_file(file_name: &str) -> ParserHandle {
-        let xml = fs::read_to_string(file_name).unwrap();
+    pub fn parse_file(filename: &str) -> Result<Parser, String> {
+
+        let xml = match fs::read_to_string(filename) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(format!("Cannot parse IDL file '{filename}': {e}"));
+            }
+        };
+
         Parser::parse_string(&xml)
     }
 
-    pub fn parse_string(xml: &str) -> ParserHandle {
-        let doc = roxmltree::Document::parse(xml).unwrap();
+    pub fn parse_string(xml: &str) -> Result<Parser, String> {
+
+        let doc = match roxmltree::Document::parse(xml) {
+            Ok(d) => d,
+            Err(e) => {
+                return Err(format!("Error parsing XML string for IDL: {e}"));
+            }
+        };
 
         let mut parser = Parser { classes: HashMap::new() };
 
@@ -232,7 +255,7 @@ impl Parser {
             }
         }
 
-        ParserHandle { parser: Rc::new(RefCell::new(parser)) }
+        Ok(parser)
     }
 
     fn add_class(&mut self, node: &roxmltree::Node) {
@@ -522,24 +545,4 @@ impl DataSerializer for Parser {
     }
 }
 
-/// Wrap the IDL Parser in an Rc() so we can share refs to it for various
-/// purposes.  It's too big to clone and in practice will never be freed,
-/// so no need to futz with lifetimes.
-pub struct ParserHandle {
-    parser: Rc<RefCell<Parser>>,
-}
-
-impl ParserHandle {
-    pub fn as_serializer(&self) -> Rc<RefCell<dyn DataSerializer>> {
-        self.parser.clone()
-    }
-
-    pub fn parser(&self) -> Ref<Parser> {
-        self.parser.borrow()
-    }
-
-    pub fn to_shared(&self) -> Rc<RefCell<Parser>> {
-        self.parser.clone()
-    }
-}
 

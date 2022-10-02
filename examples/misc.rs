@@ -23,22 +23,25 @@ fn main() -> Result<(), String> {
 
     let translator = Translator::new(idl, db);
 
-    let results = translator.search("aou", &json::object!{id: 1, ou_type: [1, 2, 3]})?;
+    let filter = json::object!{id: 1, ou_type: [1, 2, 3]};
+
+    let results = translator.search("aou", &filter)?;
 
     for org in results {
         println!("org = {}\n", org.dump());
     }
 
-    let results = translator.search("aou", &json::object!{parent_ou: JsonValue::Null})?;
+    let filter = json::object!{parent_ou: JsonValue::Null};
+    let results = translator.search("aou", &filter)?;
 
     for org in results {
         println!("org = {}\n", org.dump());
     }
 
-    for org in translator.search("aou", &json::object!{"id":{">":1}})? {
+    let filter = json::object!{id: json::object!{">": 1}};
+    for org in translator.search("aou", &filter)? {
         println!("org = {}\n", org.dump());
     }
-
 
     Ok(())
 }
