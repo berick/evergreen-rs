@@ -1,11 +1,46 @@
 ///! Tools for translating between IDL objects and Database rows.
-use log::{trace};
+use log::{trace, debug};
 use json::JsonValue;
 use super::db;
 use super::idl;
 use postgres as pg;
 use std::rc::Rc;
 use std::cell::{RefCell};
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OrderByDir {
+    Asc,
+    Desc,
+}
+
+impl fmt::Display for OrderByDir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match *self { OrderByDir::Asc => "ASC", _ => "DESC" })
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrderBy {
+    field: String,
+    dir: OrderByDir
+}
+
+impl OrderBy {
+    pub fn new(field: &str, dir: OrderByDir) -> Self {
+        OrderBy {
+            dir,
+            field: field.to_string(),
+        }
+    }
+}
+
+pub struct IdlClassSearch {
+    pub class: String,
+    pub filter: JsonValue,
+    pub order_by: Option<Vec<OrderBy>>,
+}
 
 pub struct Translator {
     idl: Rc<RefCell<idl::Parser>>,
@@ -21,10 +56,11 @@ impl Translator {
         }
     }
 
-    pub fn search(&self, idlclass: &str, filter: &JsonValue) -> Result<Vec<JsonValue>, String> {
+    pub fn idl_class_search(&self, search: &IdlClassSearch) -> Result<Vec<JsonValue>, String> {
 
         let mut results: Vec<JsonValue> = Vec::new();
         let idl_parser = self.idl.borrow();
+        let idlclass = &search.class;
 
         let class = match idl_parser.classes().get(idlclass) {
             Some(c) => c,
@@ -42,9 +78,15 @@ impl Translator {
         };
 
         let select = self.compile_class_select(&class);
-        let filter = self.compile_class_filter(&class, filter)?;
+        let filter = self.compile_class_filter(&class, &search.filter)?;
 
-        let query = format!("{select} FROM {tablename} {filter}");
+        let mut query = format!("{select} FROM {tablename} {filter}");
+
+        if let Some(order) = &search.order_by {
+            query += &self.compile_class_order_by(order);
+        }
+
+        debug!("search() executing query: {query}");
 
         let query_res = self.db.borrow_mut().client().query(&query[..], &[]);
 
@@ -58,6 +100,26 @@ impl Translator {
 
         Ok(results)
     }
+
+    pub fn compile_class_order_by(&self, order: &Vec<OrderBy>) -> String {
+
+        let mut sql = String::new();
+        let mut count = order.len();
+
+        if count > 0 {
+            sql += " ORDER BY";
+            for order_by in order {
+                sql += &format!(" {} {}", &order_by.field, &order_by.dir);
+                count -= 1;
+                if count > 0 {
+                    sql += ",";
+                }
+            }
+        }
+
+        sql
+    }
+
 
     pub fn compile_class_select(&self, class: &idl::Class) -> String {
         let mut sql = String::from("SELECT");
