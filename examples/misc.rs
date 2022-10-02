@@ -1,5 +1,6 @@
 use getopts;
 use evergreen as eg;
+use eg::idl;
 use eg::db::DatabaseConnection;
 use eg::idldb::Translator;
 use std::env;
@@ -19,9 +20,10 @@ fn main() -> Result<(), String> {
     db.connect()?;
     let db = db.to_shared();
 
-    let idl = eg::idl::Parser::parse_file("/openils/conf/fm_IDL.xml").to_shared();
+    let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
+    let idl = idl.to_shared();
 
-    let translator = Translator::new(idl, db);
+    let translator = Translator::new(idl.clone(), db.clone());
 
     let filter = json::object!{id: 1, ou_type: [1, 2, 3]};
 
