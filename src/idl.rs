@@ -1,13 +1,18 @@
+///! IDL Parser
+///!
+///! Creates an in-memory representation of the IDL file.
+///!
+///! Parser is wrapped in an Arc<Parser> since it's read-only and
+///! practically all areas of EG code need a reference to it.
 use json;
-use opensrf::classified;
-use opensrf::client::DataSerializer;
 use roxmltree;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::rc::Rc;
-use std::cell::RefCell;
 use log::warn;
+use std::sync::Arc;
+use opensrf::classified;
+use opensrf::client::DataSerializer;
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
@@ -208,19 +213,15 @@ impl Parser {
 
     /// Create a ref to a DataSerializer suitable for OpenSRF
     /// data packing and unpacking.
-    pub fn as_serializer(idlref: &Rc<RefCell<Parser>>) -> Rc<RefCell<dyn DataSerializer>> {
+    pub fn as_serializer(idlref: &Arc<Parser>) -> Arc<dyn DataSerializer> {
         idlref.clone()
-    }
-
-    pub fn to_shared(self) -> Rc<RefCell<Parser>> {
-        Rc::new(RefCell::new(self))
     }
 
     pub fn classes(&self) -> &HashMap<String, Class> {
         &self.classes
     }
 
-    pub fn parse_file(filename: &str) -> Result<Parser, String> {
+    pub fn parse_file(filename: &str) -> Result<Arc<Parser>, String> {
 
         let xml = match fs::read_to_string(filename) {
             Ok(x) => x,
@@ -232,7 +233,7 @@ impl Parser {
         Parser::parse_string(&xml)
     }
 
-    pub fn parse_string(xml: &str) -> Result<Parser, String> {
+    pub fn parse_string(xml: &str) -> Result<Arc<Parser>, String> {
 
         let doc = match roxmltree::Document::parse(xml) {
             Ok(d) => d,
@@ -255,7 +256,7 @@ impl Parser {
             }
         }
 
-        Ok(parser)
+        Ok(Arc::new(parser))
     }
 
     fn add_class(&mut self, node: &roxmltree::Node) {

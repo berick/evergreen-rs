@@ -10,7 +10,6 @@ fn main() -> Result<(), String> {
     conf.load_file("conf/opensrf_client.yml")?;
 
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
-    let idl = idl.to_shared();
 
     let mut client = Client::new(conf)?;
 

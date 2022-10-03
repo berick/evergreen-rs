@@ -7,6 +7,7 @@ use postgres as pg;
 use std::rc::Rc;
 use std::cell::{RefCell};
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderByDir {
@@ -37,35 +38,38 @@ impl OrderBy {
 }
 
 pub struct IdlClassSearch {
-    pub class: String,
-    pub filter: JsonValue,
+    pub classname: String,
+    pub filter: Option<JsonValue>,
     pub order_by: Option<Vec<OrderBy>>,
 }
 
 pub struct Translator {
-    idl: Rc<RefCell<idl::Parser>>,
+    idl: Arc<idl::Parser>,
     db: Rc<RefCell<db::DatabaseConnection>>,
 }
 
 impl Translator {
 
-    pub fn new(idl: Rc<RefCell<idl::Parser>>, db: Rc<RefCell<db::DatabaseConnection>>) -> Self {
+    pub fn new(idl: Arc<idl::Parser>, db: Rc<RefCell<db::DatabaseConnection>>) -> Self {
         Translator {
             idl,
             db,
         }
     }
 
+    pub fn idl(&self) -> &Arc<idl::Parser> {
+        &self.idl
+    }
+
     pub fn idl_class_search(&self, search: &IdlClassSearch) -> Result<Vec<JsonValue>, String> {
 
         let mut results: Vec<JsonValue> = Vec::new();
-        let idl_parser = self.idl.borrow();
-        let idlclass = &search.class;
+        let classname = &search.classname;
 
-        let class = match idl_parser.classes().get(idlclass) {
+        let class = match self.idl().classes().get(classname) {
             Some(c) => c,
             None => {
-                return Err(format!("No such IDL class: {idlclass}"));
+                return Err(format!("No such IDL class: {classname}"));
             }
         };
 
@@ -73,14 +77,17 @@ impl Translator {
             Some(t) => t,
             None => {
                 return Err(format!(
-                    "Cannot query an IDL class that has no tablename: {idlclass}"));
+                    "Cannot query an IDL class that has no tablename: {classname}"));
             }
         };
 
         let select = self.compile_class_select(&class);
-        let filter = self.compile_class_filter(&class, &search.filter)?;
 
-        let mut query = format!("{select} FROM {tablename} {filter}");
+        let mut query = format!("{select} FROM {tablename}");
+
+        if let Some(filter) = &search.filter {
+            query += &self.compile_class_filter(&class, filter)?;
+        }
 
         if let Some(order) = &search.order_by {
             query += &self.compile_class_order_by(order);
@@ -156,7 +163,7 @@ impl Translator {
                 "Translator class filter must be an object: {}", filter.dump()));
         }
 
-        let mut sql = String::from("WHERE");
+        let mut sql = String::from(" WHERE");
 
         let mut first = true;
         for (field, subq) in filter.entries() {
