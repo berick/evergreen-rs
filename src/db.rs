@@ -1,10 +1,10 @@
 ///! Create, connect, and manage database connections.
 use getopts;
-use log::{debug};
+use log::debug;
 use postgres as pg;
+use std::cell::RefCell;
 use std::env;
 use std::rc::Rc;
-use std::cell::{RefCell};
 
 const DEFAULT_DB_PORT: u16 = 5432;
 const DEFAULT_DB_HOST: &str = "localhost";
@@ -190,7 +190,6 @@ pub struct DatabaseConnection {
 }
 
 impl DatabaseConnection {
-
     /// Add options to an in-progress getopts::Options related to creating
     /// a database connection.
     pub fn append_options(options: &mut getopts::Options) {

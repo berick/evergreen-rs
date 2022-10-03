@@ -1,6 +1,6 @@
+use super::event;
 use json;
 use opensrf::client::ClientHandle;
-use super::event;
 
 const LOGIN_TIMEOUT: i32 = 30;
 
@@ -36,27 +36,25 @@ pub struct AuthSession {
 }
 
 impl AuthSession {
-
     pub fn login(client: &mut ClientHandle, args: &AuthLoginArgs) -> Result<AuthSession, String> {
-
-        let mut params = vec![
-            json::object! {
-                username: args.username(),
-                password: args.password(),
-                type: args.login_type()
-            }
-        ];
+        let mut params = vec![json::object! {
+            username: args.username(),
+            password: args.password(),
+            type: args.login_type()
+        }];
 
         if let Some(w) = args.workstation() {
             params[0]["workstation"] = json::from(w);
         }
 
         let mut ses = client.session("open-ils.auth");
-        let mut req = ses.request("open-ils.auth.login",  params)?;
+        let mut req = ses.request("open-ils.auth.login", params)?;
 
         let json_val = match req.recv(LOGIN_TIMEOUT)? {
             Some(v) => v,
-            None => { return Err("Login Timed Out".to_string()); }
+            None => {
+                return Err("Login Timed Out".to_string());
+            }
         };
 
         let evt = match event::EgEvent::parse(&json_val) {
@@ -113,4 +111,3 @@ impl AuthSession {
         self.workstation.as_deref()
     }
 }
-

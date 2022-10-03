@@ -1,5 +1,5 @@
-use evergreen as eg;
 use eg::idl;
+use evergreen as eg;
 use opensrf as osrf;
 use osrf::client::Client;
 use osrf::conf::ClientConfig;

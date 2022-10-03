@@ -35,7 +35,6 @@ impl fmt::Display for EgEvent {
 }
 
 impl EgEvent {
-
     pub fn code(&self) -> isize {
         self.code
     }
@@ -76,7 +75,6 @@ impl EgEvent {
         self.success
     }
 
-
     /// Parses a JsonValue and optionally returns an EgEvent.
     ///
     /// ```
@@ -104,13 +102,16 @@ impl EgEvent {
     /// assert!(evt_op.is_none());
     /// ```
     pub fn parse(jv: &json::JsonValue) -> Option<EgEvent> {
-
-        if !jv.is_object() { return None; }
+        if !jv.is_object() {
+            return None;
+        }
 
         // textcode is the only required field.
         let textcode = match jv["textcode"].as_str() {
             Some(c) => String::from(c),
-            _ => { return None; }
+            _ => {
+                return None;
+            }
         };
 
         let success = textcode.eq("SUCCESS");
@@ -138,7 +139,6 @@ impl EgEvent {
 
         for field in vec!["desc", "debug", "note", "servertime", "ilsperm"] {
             if let Some(value) = jv[field].as_str() {
-
                 let v = String::from(value);
                 match field {
                     "desc" => evt.desc = Some(v),
@@ -146,7 +146,7 @@ impl EgEvent {
                     "note" => evt.note = Some(v),
                     "servertime" => evt.servertime = Some(v),
                     "ilsperm" => evt.ilsperm = Some(v),
-                    _ => {},
+                    _ => {}
                 }
             }
         }

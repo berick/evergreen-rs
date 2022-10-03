@@ -5,14 +5,14 @@
 ///! Parser is wrapped in an Arc<Parser> since it's read-only and
 ///! practically all areas of EG code need a reference to it.
 use json;
+use log::warn;
+use opensrf::classified;
+use opensrf::client::DataSerializer;
 use roxmltree;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use log::warn;
 use std::sync::Arc;
-use opensrf::classified;
-use opensrf::client::DataSerializer;
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
@@ -210,7 +210,6 @@ pub struct Parser {
 }
 
 impl Parser {
-
     /// Create a ref to a DataSerializer suitable for OpenSRF
     /// data packing and unpacking.
     pub fn as_serializer(idlref: &Arc<Parser>) -> Arc<dyn DataSerializer> {
@@ -222,7 +221,6 @@ impl Parser {
     }
 
     pub fn parse_file(filename: &str) -> Result<Arc<Parser>, String> {
-
         let xml = match fs::read_to_string(filename) {
             Ok(x) => x,
             Err(e) => {
@@ -234,7 +232,6 @@ impl Parser {
     }
 
     pub fn parse_string(xml: &str) -> Result<Arc<Parser>, String> {
-
         let doc = match roxmltree::Document::parse(xml) {
             Ok(d) => d,
             Err(e) => {
@@ -242,7 +239,9 @@ impl Parser {
             }
         };
 
-        let mut parser = Parser { classes: HashMap::new() };
+        let mut parser = Parser {
+            classes: HashMap::new(),
+        };
 
         for root_node in doc.root().children() {
             if root_node.tag_name().name() == "IDL" {
@@ -279,12 +278,12 @@ impl Parser {
 
         let field_safe = match node.attribute((OILS_NS_PERSIST, "field_safe")) {
             Some(v) => v.to_lowercase().eq("true"),
-            None => false
+            None => false,
         };
 
         let read_only = match node.attribute((OILS_NS_PERSIST, "readonly")) {
             Some(v) => v.to_lowercase().eq("true"),
-            None => false
+            None => false,
         };
 
         let mut class = Class {
@@ -545,5 +544,3 @@ impl DataSerializer for Parser {
         }
     }
 }
-
-

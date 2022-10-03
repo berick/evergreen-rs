@@ -1,12 +1,12 @@
-///! Tools for translating between IDL objects and Database rows.
-use log::{trace, debug};
-use json::JsonValue;
 use super::db;
 use super::idl;
+use json::JsonValue;
+///! Tools for translating between IDL objects and Database rows.
+use log::{debug, trace};
 use postgres as pg;
-use std::rc::Rc;
-use std::cell::{RefCell};
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,15 +17,21 @@ pub enum OrderByDir {
 
 impl fmt::Display for OrderByDir {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match *self { OrderByDir::Asc => "ASC", _ => "DESC" })
+        write!(
+            f,
+            "{}",
+            match *self {
+                OrderByDir::Asc => "ASC",
+                _ => "DESC",
+            }
+        )
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrderBy {
     field: String,
-    dir: OrderByDir
+    dir: OrderByDir,
 }
 
 impl OrderBy {
@@ -49,12 +55,8 @@ pub struct Translator {
 }
 
 impl Translator {
-
     pub fn new(idl: Arc<idl::Parser>, db: Rc<RefCell<db::DatabaseConnection>>) -> Self {
-        Translator {
-            idl,
-            db,
-        }
+        Translator { idl, db }
     }
 
     pub fn idl(&self) -> &Arc<idl::Parser> {
@@ -62,7 +64,6 @@ impl Translator {
     }
 
     pub fn idl_class_search(&self, search: &IdlClassSearch) -> Result<Vec<JsonValue>, String> {
-
         let mut results: Vec<JsonValue> = Vec::new();
         let classname = &search.classname;
 
@@ -77,7 +78,8 @@ impl Translator {
             Some(t) => t,
             None => {
                 return Err(format!(
-                    "Cannot query an IDL class that has no tablename: {classname}"));
+                    "Cannot query an IDL class that has no tablename: {classname}"
+                ));
             }
         };
 
@@ -109,7 +111,6 @@ impl Translator {
     }
 
     pub fn compile_class_order_by(&self, order: &Vec<OrderBy>) -> String {
-
         let mut sql = String::new();
         let mut count = order.len();
 
@@ -126,7 +127,6 @@ impl Translator {
 
         sql
     }
-
 
     pub fn compile_class_select(&self, class: &idl::Class) -> String {
         let mut sql = String::from("SELECT");
@@ -149,18 +149,22 @@ impl Translator {
             JsonValue::Boolean(b) => match b {
                 true => Some("TRUE".to_string()),
                 false => Some("FALSE".to_string()),
-            }
+            },
             _ => None,
         }
     }
 
     /// Generate a WHERE clause from a JSON query object for an IDL class.
-    pub fn compile_class_filter(&self,
-        class: &idl::Class, filter: &JsonValue) -> Result<String, String> {
-
+    pub fn compile_class_filter(
+        &self,
+        class: &idl::Class,
+        filter: &JsonValue,
+    ) -> Result<String, String> {
         if !filter.is_object() {
             return Err(format!(
-                "Translator class filter must be an object: {}", filter.dump()));
+                "Translator class filter must be an object: {}",
+                filter.dump()
+            ));
         }
 
         let mut sql = String::from(" WHERE");
@@ -169,10 +173,18 @@ impl Translator {
         for (field, subq) in filter.entries() {
             trace!("compile_class_filter adding filter on field: {field}");
 
-            if class.fields().iter().filter(|(n, _)| n.eq(&field)).next().is_none() {
-                return Err(format!("Cannot query field '{field}' on class '{}'", class.class()));
+            if class
+                .fields()
+                .iter()
+                .filter(|(n, _)| n.eq(&field))
+                .next()
+                .is_none()
+            {
+                return Err(format!(
+                    "Cannot query field '{field}' on class '{}'",
+                    class.class()
+                ));
             }
-
 
             if first {
                 first = false;
@@ -183,18 +195,13 @@ impl Translator {
             sql += &format!(" {field}");
 
             if subq.is_string() || subq.is_number() {
-
                 let literal = self.json_literal_to_sql_value(subq);
                 sql += &format!(" = {}", literal.unwrap());
-
             } else if subq.is_boolean() || subq.is_null() {
-
                 let literal = self.json_literal_to_sql_value(subq);
                 sql += &format!(" IS {}", literal.unwrap());
-
             } else if subq.is_array() {
                 sql += &self.compile_class_filter_array(&subq);
-
             } else {
                 sql += &self.compile_class_filter_object(&subq)?;
             }
@@ -205,11 +212,9 @@ impl Translator {
 
     /// Turn an object-based subquery into part of the WHERE AND.
     pub fn compile_class_filter_object(&self, obj: &JsonValue) -> Result<String, String> {
-
         let mut sql = String::new();
 
         for (key, val) in obj.entries() {
-
             let value = match self.json_literal_to_sql_value(val) {
                 Some(v) => v,
                 None => {
@@ -220,7 +225,7 @@ impl Translator {
             let operand = key.to_uppercase();
 
             match operand.as_str() {
-                "IS" | "IS NOT" | "<" | "<=" | ">" | ">=" | "<>" | "!=" => {},
+                "IS" | "IS NOT" | "<" | "<=" | ">" | ">=" | "<>" | "!=" => {}
                 _ => {
                     return Err(format!("Unsupported operand: {operand}"));
                 }
@@ -234,7 +239,6 @@ impl Translator {
 
     /// Turn an array-based subquery into part of the WHERE AND.
     pub fn compile_class_filter_array(&self, a: &JsonValue) -> String {
-
         let mut sql = String::from(" IN (");
         let mut first = true;
 
@@ -255,7 +259,6 @@ impl Translator {
 
     /// Maps a PG row into an IDL-based JsonValue;
     pub fn row_to_idl(&self, class: &idl::Class, row: &pg::Row) -> Result<JsonValue, String> {
-
         let mut obj = JsonValue::new_object();
         obj[idl::CLASSNAME_KEY] = json::from(class.class());
 
@@ -270,13 +273,15 @@ impl Translator {
     }
 
     /// Translate a PG-typed row value into a JsonValue
-    pub fn col_value_to_json_value(&self, row: &pg::Row, index: usize) -> Result<JsonValue, String> {
-
+    pub fn col_value_to_json_value(
+        &self,
+        row: &pg::Row,
+        index: usize,
+    ) -> Result<JsonValue, String> {
         let col_type = row.columns().get(index).map(|c| c.type_().name()).unwrap();
 
         match col_type {
             // JsonValue has From<Option<T>>
-
             "bool" => {
                 let v: Option<bool> = row.get(index);
                 Ok(json::from(v))
@@ -305,10 +310,7 @@ impl Translator {
                 let v: Option<f64> = row.get(index);
                 Ok(json::from(v))
             }
-            _ => {
-                Err(format!("Unsupported column type: {col_type}"))
-            }
+            _ => Err(format!("Unsupported column type: {col_type}")),
         }
     }
 }
-

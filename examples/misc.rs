@@ -1,10 +1,10 @@
-use getopts;
-use evergreen as eg;
-use eg::idl;
 use eg::db::DatabaseConnection;
-use eg::idldb::{Translator, IdlClassSearch, OrderBy, OrderByDir};
-use std::env;
+use eg::idl;
+use eg::idldb::{IdlClassSearch, OrderBy, OrderByDir, Translator};
+use evergreen as eg;
+use getopts;
 use json::JsonValue;
+use std::env;
 
 fn main() -> Result<(), String> {
     env_logger::init();
@@ -26,7 +26,7 @@ fn main() -> Result<(), String> {
 
     let mut search = IdlClassSearch {
         classname: String::from("aou"),
-        filter: Some(json::object!{id: 1, ou_type: [1, 2, 3]}),
+        filter: Some(json::object! {id: 1, ou_type: [1, 2, 3]}),
         order_by: None,
     };
 
@@ -36,14 +36,14 @@ fn main() -> Result<(), String> {
         println!("org 1: {}\n", org.dump());
     }
 
-    search.filter = Some(json::object!{parent_ou: JsonValue::Null});
+    search.filter = Some(json::object! {parent_ou: JsonValue::Null});
     let results = translator.idl_class_search(&search)?;
 
     for org in results {
         println!("org 2: {}\n", org.dump());
     }
 
-    search.filter = Some(json::object!{id: json::object!{">": 1}});
+    search.filter = Some(json::object! {id: json::object!{">": 1}});
     search.order_by = Some(vec![OrderBy::new("name", OrderByDir::Asc)]);
 
     for org in translator.idl_class_search(&search)? {
@@ -57,4 +57,3 @@ fn main() -> Result<(), String> {
 
     Ok(())
 }
-
