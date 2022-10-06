@@ -20,6 +20,10 @@ const OILS_NS_PERSIST: &str = "http://open-ils.org/spec/opensrf/IDL/persistence/
 const OILS_NS_REPORTER: &str = "http://open-ils.org/spec/opensrf/IDL/reporter/v1";
 
 const AUTO_FIELDS: [&str; 3] = ["isnew", "ischanged", "isdeleted"];
+
+/// Key where IDL class name/hint value is stored on unpacked JSON objects.
+/// OpenSRF has its own class key used for storing class names on
+/// packed (array-based) JSON objects, which is separate.
 pub const CLASSNAME_KEY: &str = "_classname";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -164,7 +168,7 @@ pub struct Link {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
-    class: String,
+    classname: String,
     label: String,
     field_safe: bool,
     read_only: bool,
@@ -175,8 +179,8 @@ pub struct Class {
 }
 
 impl Class {
-    pub fn class(&self) -> &str {
-        &self.class
+    pub fn classname(&self) -> &str {
+        &self.classname
     }
     pub fn label(&self) -> &str {
         &self.label
@@ -197,7 +201,7 @@ impl fmt::Display for Class {
         write!(
             f,
             "Class: class={} fields={} links={} label={} ",
-            self.class,
+            self.classname,
             self.fields.len(),
             self.links.len(),
             self.label
@@ -291,7 +295,7 @@ impl Parser {
             fieldmapper,
             field_safe,
             read_only,
-            class: name.to_string(),
+            classname: name.to_string(),
             label: label,
             fields: HashMap::new(),
             links: HashMap::new(),
@@ -325,7 +329,7 @@ impl Parser {
 
         self.add_auto_fields(&mut class, field_array_pos);
 
-        self.classes.insert(class.class.to_string(), class);
+        self.classes.insert(class.classname.to_string(), class);
     }
 
     fn add_auto_fields(&self, class: &mut Class, mut pos: usize) {

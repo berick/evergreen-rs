@@ -1,7 +1,7 @@
+///! Tools for translating between IDL objects and Database rows.
 use super::db;
 use super::idl;
 use json::JsonValue;
-///! Tools for translating between IDL objects and Database rows.
 use log::{debug, trace};
 use postgres as pg;
 use std::cell::RefCell;
@@ -47,6 +47,36 @@ pub struct IdlClassSearch {
     pub classname: String,
     pub filter: Option<JsonValue>,
     pub order_by: Option<Vec<OrderBy>>,
+}
+
+impl IdlClassSearch {
+    pub fn new(classname: &str) -> Self {
+        IdlClassSearch {
+            classname: classname.to_string(),
+            filter: None,
+            order_by: None,
+        }
+    }
+
+    pub fn classname(&self) -> &str {
+        &self.classname
+    }
+
+    pub fn filter(&self) -> &Option<JsonValue> {
+        &self.filter
+    }
+
+    pub fn set_filter(&mut self, f: JsonValue) {
+        self.filter = Some(f);
+    }
+
+    pub fn order_by(&self) -> &Option<Vec<OrderBy>> {
+        &self.order_by
+    }
+
+    pub fn set_order_by(&mut self, v: Vec<OrderBy>) {
+        self.order_by = Some(v);
+    }
 }
 
 pub struct Translator {
@@ -182,7 +212,7 @@ impl Translator {
             {
                 return Err(format!(
                     "Cannot query field '{field}' on class '{}'",
-                    class.class()
+                    class.classname()
                 ));
             }
 
@@ -260,7 +290,7 @@ impl Translator {
     /// Maps a PG row into an IDL-based JsonValue;
     pub fn row_to_idl(&self, class: &idl::Class, row: &pg::Row) -> Result<JsonValue, String> {
         let mut obj = JsonValue::new_object();
-        obj[idl::CLASSNAME_KEY] = json::from(class.class());
+        obj[idl::CLASSNAME_KEY] = json::from(class.classname());
 
         let mut index = 0;
 

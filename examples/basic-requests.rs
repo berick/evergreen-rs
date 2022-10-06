@@ -1,13 +1,10 @@
 use eg::idl;
 use evergreen as eg;
-use opensrf as osrf;
-use osrf::client::Client;
-use osrf::conf::ClientConfig;
+use opensrf::Client;
+use opensrf::ClientConfig;
 
 fn main() -> Result<(), String> {
-    let mut conf = ClientConfig::new();
-
-    conf.load_file("conf/opensrf_client.yml")?;
+    let conf = ClientConfig::from_file("conf/opensrf_client.yml")?;
 
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
 
@@ -15,7 +12,7 @@ fn main() -> Result<(), String> {
 
     client.set_serializer(idl::Parser::as_serializer(&idl));
 
-    println!("parser class count = {}", idl.borrow().classes().len());
+    println!("parser class count = {}", idl.classes().len());
 
     let mut ses = client.session("open-ils.storage");
 
