@@ -14,7 +14,9 @@ fn main() -> Result<(), String> {
 
     println!("parser class count = {}", idl.classes().len());
 
-    let mut ses = client.session("open-ils.storage");
+    let mut ses = client.session("open-ils.cstore");
+
+    ses.connect()?;
 
     let mut req = ses.request("opensrf.system.echo", vec!["howdy", "world"])?;
 
@@ -22,7 +24,9 @@ fn main() -> Result<(), String> {
         println!("Echo returned: {txt:?}");
     }
 
-    let method = "open-ils.storage.direct.actor.user.search";
+    ses.disconnect()?;
+
+    let method = "open-ils.cstore.direct.actor.user.search";
 
     let params = vec![
         json::object! {
