@@ -1,6 +1,6 @@
-use opensrf as osrf;
-use super::idl;
 use super::event::EgEvent;
+use super::idl;
+use opensrf as osrf;
 use std::sync::Arc;
 
 const DEFAULT_TIMEOUT: i32 = 60;
@@ -18,7 +18,7 @@ impl From<&str> for Personality {
         match s {
             "open-ils.pcrud" => Self::Pcrud,
             "open-ils.reporter-store" => Self::ReporterStore,
-            _ => Self::Cstore
+            _ => Self::Cstore,
         }
     }
 }
@@ -56,7 +56,6 @@ pub struct Editor {
 }
 
 impl Editor {
-
     pub fn new(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>) -> Self {
         Editor {
             client: client.clone(),
@@ -79,7 +78,11 @@ impl Editor {
         editor
     }
 
-    pub fn with_auth_xact(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>, authtoken: &str) -> Self {
+    pub fn with_auth_xact(
+        client: &osrf::ClientHandle,
+        idl: &Arc<idl::Parser>,
+        authtoken: &str,
+    ) -> Self {
         let mut editor = Editor::new(client, idl);
         editor.authtoken = Some(authtoken.to_string());
         editor.xact_wanted = true;
@@ -91,10 +94,11 @@ impl Editor {
     /// Update our "requestor" object to match the user object linked
     /// to the authtoken in the cache.
     pub fn checkauth(&mut self) -> Result<bool, String> {
-
         let token = match self.authtoken() {
             Some(t) => t,
-            None => { return Ok(false); }
+            None => {
+                return Ok(false);
+            }
         };
 
         let service = "open-ils.auth";
@@ -104,7 +108,6 @@ impl Editor {
         let resp_op = self.client.sendrecv(service, method, params)?.next();
 
         if let Some(ref user) = resp_op {
-
             if let Some(evt) = EgEvent::parse(&user) {
                 log::debug!("Editor checkauth call returned non-success event: {}", evt);
                 self.set_last_event(evt);
@@ -207,12 +210,11 @@ impl Editor {
     fn request<T>(
         &mut self,
         method: &str,
-        params: Vec<T>
+        params: Vec<T>,
     ) -> Result<Option<json::JsonValue>, String>
     where
         T: Into<json::JsonValue>,
     {
-
         // TODO log the request
         // TODO substream
 
@@ -229,15 +231,10 @@ impl Editor {
         self.session.as_mut().unwrap()
     }
 
-    pub fn retrieve<T>(
-        &mut self,
-        idlclass: &str,
-        id: T
-    ) -> Result<Option<json::JsonValue>, String>
+    pub fn retrieve<T>(&mut self, idlclass: &str, id: T) -> Result<Option<json::JsonValue>, String>
     where
         T: Into<json::JsonValue>,
     {
-
         let class = match self.idl.classes().get(idlclass) {
             Some(c) => c,
             None => {
@@ -257,4 +254,3 @@ impl Editor {
         self.request(&method, vec![id])
     }
 }
-

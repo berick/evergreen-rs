@@ -45,13 +45,7 @@ pub struct AuthLoginArgs {
 }
 
 impl AuthLoginArgs {
-
-    pub fn new<T>(
-        username: &str,
-        password: &str,
-        login_type: T,
-        workstation: Option<&str>
-    ) -> Self
+    pub fn new<T>(username: &str, password: &str, login_type: T, workstation: Option<&str>) -> Self
     where
         T: Into<AuthLoginType>,
     {
@@ -59,7 +53,10 @@ impl AuthLoginArgs {
             username: username.to_string(),
             password: password.to_string(),
             login_type: login_type.into(),
-            workstation: match workstation { Some(w) => Some(w.to_string()), _ => None },
+            workstation: match workstation {
+                Some(w) => Some(w.to_string()),
+                _ => None,
+            },
         }
     }
 
@@ -82,7 +79,7 @@ impl AuthLoginArgs {
     pub fn to_json_value(&self) -> json::JsonValue {
         let lt: &str = self.login_type().into();
 
-        let mut jv = json::object!{
+        let mut jv = json::object! {
             username: self.username(),
             password: self.password(),
             "type": lt,

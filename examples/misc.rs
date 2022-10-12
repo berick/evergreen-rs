@@ -1,9 +1,9 @@
-use std::env;
-use getopts;
-use evergreen as eg;
-use eg::idl;
 use eg::db::DatabaseConnection;
+use eg::idl;
 use eg::idldb::{IdlClassSearch, OrderBy, OrderByDir, Translator};
+use evergreen as eg;
+use getopts;
+use std::env;
 
 fn main() -> Result<(), String> {
     env_logger::init();

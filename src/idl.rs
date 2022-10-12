@@ -319,7 +319,6 @@ impl Parser {
             .filter(|n| n.node_type() == roxmltree::NodeType::Element)
         {
             if child.tag_name().name() == "fields" {
-
                 class.pkey = match child.attribute((OILS_NS_PERSIST, "primary")) {
                     Some(v) => Some(v.to_string()),
                     None => None,

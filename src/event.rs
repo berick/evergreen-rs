@@ -35,7 +35,6 @@ impl fmt::Display for EgEvent {
 }
 
 impl EgEvent {
-
     pub fn new(textcode: &str) -> Self {
         EgEvent {
             code: 0,
