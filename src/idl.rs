@@ -172,6 +172,10 @@ pub struct Class {
     label: String,
     field_safe: bool,
     read_only: bool,
+
+    /// Name of primary key column
+    pkey: Option<String>,
+
     fieldmapper: Option<String>,
     fields: HashMap<String, Field>,
     links: HashMap<String, Link>,
@@ -179,6 +183,9 @@ pub struct Class {
 }
 
 impl Class {
+    pub fn pkey(&self) -> Option<&str> {
+        self.pkey.as_deref()
+    }
     pub fn classname(&self) -> &str {
         &self.classname
     }
@@ -187,6 +194,9 @@ impl Class {
     }
     pub fn fields(&self) -> &HashMap<String, Field> {
         &self.fields
+    }
+    pub fn fieldmapper(&self) -> Option<&str> {
+        self.fieldmapper.as_deref()
     }
     pub fn links(&self) -> &HashMap<String, Link> {
         &self.links
@@ -299,6 +309,7 @@ impl Parser {
             label: label,
             fields: HashMap::new(),
             links: HashMap::new(),
+            pkey: None,
         };
 
         let mut field_array_pos = 0;
@@ -308,6 +319,12 @@ impl Parser {
             .filter(|n| n.node_type() == roxmltree::NodeType::Element)
         {
             if child.tag_name().name() == "fields" {
+
+                class.pkey = match child.attribute((OILS_NS_PERSIST, "primary")) {
+                    Some(v) => Some(v.to_string()),
+                    None => None,
+                };
+
                 for field_node in child
                     .children()
                     .filter(|n| n.node_type() == roxmltree::NodeType::Element)

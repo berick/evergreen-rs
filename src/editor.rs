@@ -1,5 +1,7 @@
 use opensrf as osrf;
+use super::idl;
 use super::event::EgEvent;
+use std::sync::Arc;
 
 const DEFAULT_TIMEOUT: i32 = 60;
 
@@ -34,6 +36,8 @@ impl From<&Personality> for &str {
 pub struct Editor {
     client: osrf::ClientHandle,
     session: Option<osrf::SessionHandle>,
+    idl: Arc<idl::Parser>,
+
     personality: Personality,
     authtoken: Option<String>,
     authtime: Option<usize>,
@@ -53,9 +57,10 @@ pub struct Editor {
 
 impl Editor {
 
-    pub fn new(client: &osrf::ClientHandle) -> Self {
+    pub fn new(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>) -> Self {
         Editor {
             client: client.clone(),
+            idl: idl.clone(),
             personality: "".into(),
             timeout: DEFAULT_TIMEOUT,
             xact_wanted: false,
@@ -68,14 +73,14 @@ impl Editor {
         }
     }
 
-    pub fn with_auth(client: &osrf::ClientHandle, authtoken: &str) -> Self {
-        let mut editor = Editor::new(client);
+    pub fn with_auth(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>, authtoken: &str) -> Self {
+        let mut editor = Editor::new(client, idl);
         editor.authtoken = Some(authtoken.to_string());
         editor
     }
 
-    pub fn with_auth_xact(client: &osrf::ClientHandle, authtoken: &str) -> Self {
-        let mut editor = Editor::new(client);
+    pub fn with_auth_xact(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>, authtoken: &str) -> Self {
+        let mut editor = Editor::new(client, idl);
         editor.authtoken = Some(authtoken.to_string());
         editor.xact_wanted = true;
         editor
@@ -199,7 +204,7 @@ impl Editor {
     /// Send an API request to our service/worker with parameters.
     ///
     /// All requests return at most a single response.
-    pub fn request<T>(
+    fn request<T>(
         &mut self,
         method: &str,
         params: Vec<T>
@@ -215,13 +220,41 @@ impl Editor {
         req.recv(self.timeout)
     }
 
-    /// Returns our session, creating a new one if needed.
-    pub fn session(&mut self) -> &mut osrf::SessionHandle {
+    /// Returns our mutable session, creating a new one if needed.
+    fn session(&mut self) -> &mut osrf::SessionHandle {
         if self.session.is_none() {
             self.session = Some(self.client.session(self.personality().into()));
         }
 
         self.session.as_mut().unwrap()
+    }
+
+    pub fn retrieve<T>(
+        &mut self,
+        idlclass: &str,
+        id: T
+    ) -> Result<Option<json::JsonValue>, String>
+    where
+        T: Into<json::JsonValue>,
+    {
+
+        let class = match self.idl.classes().get(idlclass) {
+            Some(c) => c,
+            None => {
+                return Err(format!("No such IDL class: {idlclass}"));
+            }
+        };
+
+        let fmapper = match class.fieldmapper() {
+            Some(s) => s.replace("::", "."),
+            None => {
+                return Err(format!("IDL class has no fieldmapper name: {idlclass}"));
+            }
+        };
+
+        let method = self.app_method(&format!("direct.{fmapper}.retrieve"));
+
+        self.request(&method, vec![id])
     }
 }
 
