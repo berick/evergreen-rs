@@ -1,8 +1,9 @@
 use opensrf as osrf;
 use super::event::EgEvent;
-use json::JsonValue;
-//use std::fmt;
 
+const DEFAULT_TIMEOUT: i32 = 60;
+
+/// Specifies Which service are we communicating with.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Personality {
     Cstore,
@@ -32,10 +33,19 @@ impl From<&Personality> for &str {
 
 pub struct Editor {
     client: osrf::ClientHandle,
+    session: Option<osrf::SessionHandle>,
     personality: Personality,
     authtoken: Option<String>,
     authtime: Option<usize>,
-    requestor: Option<JsonValue>,
+    requestor: Option<json::JsonValue>,
+    timeout: i32,
+
+    /// True if the caller wants us to perform actions within
+    /// a transaction.  Write actions require this.
+    xact_wanted: bool,
+
+    /// ID for currently active transaction.
+    xact_id: Option<String>,
 
     /// Most recent non-success event
     last_event: Option<EgEvent>,
@@ -47,6 +57,10 @@ impl Editor {
         Editor {
             client: client.clone(),
             personality: "".into(),
+            timeout: DEFAULT_TIMEOUT,
+            xact_wanted: false,
+            xact_id: None,
+            session: None,
             authtoken: None,
             authtime: None,
             requestor: None,
@@ -54,12 +68,23 @@ impl Editor {
         }
     }
 
-    pub fn new_with_auth(client: &osrf::ClientHandle, authtoken: &str) -> Self {
+    pub fn with_auth(client: &osrf::ClientHandle, authtoken: &str) -> Self {
         let mut editor = Editor::new(client);
         editor.authtoken = Some(authtoken.to_string());
         editor
     }
 
+    pub fn with_auth_xact(client: &osrf::ClientHandle, authtoken: &str) -> Self {
+        let mut editor = Editor::new(client);
+        editor.authtoken = Some(authtoken.to_string());
+        editor.xact_wanted = true;
+        editor
+    }
+
+    /// Verify our authtoken is still valid.
+    ///
+    /// Update our "requestor" object to match the user object linked
+    /// to the authtoken in the cache.
     pub fn checkauth(&mut self) -> Result<bool, String> {
 
         let token = match self.authtoken() {
@@ -91,39 +116,10 @@ impl Editor {
 
         self.set_last_event(EgEvent::new("NO_SESSION"));
         Ok(false)
+    }
 
-        /*
-
-
-        let resp = match resp_op {
-            Some(r) => r,
-            None => {
-                return Err(format!("No response from auth server in checkauth()"));
-            }
-        };
-
-        log::trace!("Editor checkauth got: {resp}");
-
-        let evt = match EgEvent::parse(&resp) {
-            Some(e) => e,
-            None => EgEvent::new("NO_SESSION"),
-        };
-
-        log::debug!("Editor checkauth() got {}", evt);
-
-        if evt.textcode().ne("SUCCESS") {
-            self.last_event = Some(evt);
-            return Ok(false);
-        }
-
-        let payload = evt.payload();
-
-        // Auth session is valid.  Update some local data.
-        self.authtime = osrf::util::json_usize(&payload["authtime"]);
-        self.requestor = Some(payload["userobj"].to_owned());
-
-        Ok(true)
-        */
+    pub fn personality(&self) -> &Personality {
+        &self.personality
     }
 
     pub fn authtoken(&self) -> Option<&str> {
@@ -134,15 +130,98 @@ impl Editor {
         self.authtime
     }
 
-    pub fn requestor(&self) -> Option<&JsonValue> {
-        match &self.requestor {
-            Some(r) => Some(r),
-            None => None
-        }
+    fn has_session(&self) -> bool {
+        self.session.is_some()
+    }
+
+    fn has_xact_id(&self) -> bool {
+        self.xact_id.is_some()
+    }
+
+    pub fn requestor(&self) -> Option<&json::JsonValue> {
+        self.requestor.as_ref()
+    }
+
+    pub fn last_event(&self) -> Option<&EgEvent> {
+        self.last_event.as_ref()
     }
 
     fn set_last_event(&mut self, evt: EgEvent) {
         self.last_event = Some(evt);
+    }
+
+    /// Rollback the active transaction, disconnect from the worker,
+    /// and return the last_event value.
+    pub fn die_event(&mut self) -> Result<Option<&EgEvent>, String> {
+        self.rollback()?;
+        Ok(self.last_event())
+    }
+
+    /// Rollback the active transaction and disconnect from the worker.
+    pub fn rollback(&mut self) -> Result<(), String> {
+        self.xact_rollback()?;
+        self.disconnect()
+    }
+
+    /// Generate a method name prefixed with the app name of our personality.
+    fn app_method(&self, part: &str) -> String {
+        let p: &str = self.personality().into();
+        format!("{p}.{}", part)
+    }
+
+    pub fn xact_rollback(&mut self) -> Result<(), String> {
+        if self.has_session() && self.has_xact_id() {
+            self.request_np(&self.app_method("transaction.rollback"))?;
+        }
+
+        self.xact_id = None;
+        self.xact_wanted = false;
+
+        Ok(())
+    }
+
+    pub fn disconnect(&mut self) -> Result<(), String> {
+        if let Some(ref ses) = self.session {
+            ses.disconnect()?;
+        }
+        self.session = None;
+        Ok(())
+    }
+
+    /// Send an API request without any parameters.
+    ///
+    /// See request() for more.
+    fn request_np(&mut self, method: &str) -> Result<Option<json::JsonValue>, String> {
+        let params: Vec<json::JsonValue> = Vec::new();
+        self.request(method, params)
+    }
+
+    /// Send an API request to our service/worker with parameters.
+    ///
+    /// All requests return at most a single response.
+    pub fn request<T>(
+        &mut self,
+        method: &str,
+        params: Vec<T>
+    ) -> Result<Option<json::JsonValue>, String>
+    where
+        T: Into<json::JsonValue>,
+    {
+
+        // TODO log the request
+        // TODO substream
+
+        let mut req = self.session().request(method, params)?;
+        req.recv(self.timeout)
+    }
+
+    /// Returns our session, creating a new one if needed.
+    pub fn session(&mut self) -> &mut osrf::SessionHandle {
+        if self.session.is_none() {
+            self.session = Some(self.client.session(self.personality().into()));
+        }
+
+        self.session.as_mut().unwrap()
     }
 }
 

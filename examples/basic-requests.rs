@@ -66,10 +66,5 @@ fn main() -> Result<(), String> {
 
     println!("\nLogged in and got authtoken: {}", auth_ses.token());
 
-    let mut editor = eg::Editor::new_with_auth(&client, auth_ses.token());
-    if editor.checkauth()? {
-        println!("Auth Check OK: {}", editor.requestor().unwrap()["usrname"]);
-    }
-
     Ok(())
 }
