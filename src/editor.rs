@@ -20,12 +20,12 @@ impl From<&str> for Personality {
     }
 }
 
-impl Into<&str> for Personality {
-    fn into(self) -> &'static str {
-        match self {
-            Self::Cstore => "open-ils.cstore",
-            Self::Pcrud => "open-ils.pcrud",
-            Self::ReporterStore => "open-ils.reporter-store",
+impl From<&Personality> for &str {
+    fn from(p: &Personality) -> &'static str {
+        match *p {
+            Personality::Cstore => "open-ils.cstore",
+            Personality::Pcrud => "open-ils.pcrud",
+            Personality::ReporterStore => "open-ils.reporter-store",
         }
     }
 }

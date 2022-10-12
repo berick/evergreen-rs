@@ -129,13 +129,13 @@ pub enum RelType {
     Unset,
 }
 
-impl Into<&'static str> for RelType {
-    fn into(self) -> &'static str {
-        match self {
-            Self::HasA => "has_a",
-            Self::HasMany => "has_many",
-            Self::MightHave => "might_have",
-            Self::Unset => "unset",
+impl From<&RelType> for &str {
+    fn from(rt: &RelType) -> &'static str {
+        match *rt {
+            RelType::HasA => "has_a",
+            RelType::HasMany => "has_many",
+            RelType::MightHave => "might_have",
+            RelType::Unset => "unset",
         }
     }
 }

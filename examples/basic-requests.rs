@@ -60,12 +60,7 @@ fn main() -> Result<(), String> {
         );
     }
 
-    let args = eg::auth::AuthLoginArgs {
-        username: String::from("admin"),
-        password: String::from("demo123"),
-        login_type: String::from("temp"),
-        workstation: None,
-    };
+    let args = eg::auth::AuthLoginArgs::new("admin", "demo123", "temp", None);
 
     let auth_ses = eg::auth::AuthSession::login(&mut client, &args)?;
 
