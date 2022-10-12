@@ -231,26 +231,49 @@ impl Editor {
         self.session.as_mut().unwrap()
     }
 
+    fn get_class(&self, idlclass: &str) -> Result<&idl::Class, String> {
+        match self.idl.classes().get(idlclass) {
+            Some(c) => Ok(c),
+            None => Err(format!("No such IDL class: {idlclass}"))
+        }
+    }
+
+    /// Returns the fieldmapper value for the IDL class, replacing
+    /// "::" with "." so the value matches how it's formatted in
+    /// cstore, etc. API calls.
+    fn get_fieldmapper(&self, idlclass: &str) -> Result<String, String> {
+        let class = self.get_class(idlclass)?;
+
+        match class.fieldmapper() {
+            Some(s) => Ok(s.replace("::", ".")),
+            None => Err(format!("IDL class has no fieldmapper name: {idlclass}"))
+        }
+    }
+
     pub fn retrieve<T>(&mut self, idlclass: &str, id: T) -> Result<Option<json::JsonValue>, String>
     where
         T: Into<json::JsonValue>,
     {
-        let class = match self.idl.classes().get(idlclass) {
-            Some(c) => c,
-            None => {
-                return Err(format!("No such IDL class: {idlclass}"));
-            }
-        };
-
-        let fmapper = match class.fieldmapper() {
-            Some(s) => s.replace("::", "."),
-            None => {
-                return Err(format!("IDL class has no fieldmapper name: {idlclass}"));
-            }
-        };
+        let fmapper = self.get_fieldmapper(idlclass)?;
 
         let method = self.app_method(&format!("direct.{fmapper}.retrieve"));
 
         self.request(&method, vec![id])
+    }
+
+    pub fn search(&mut self, idlclass: &str, query: json::JsonValue) -> Result<Vec<json::JsonValue>, String>
+    {
+        let fmapper = self.get_fieldmapper(idlclass)?;
+
+        // TODO substream runs wihout atomic
+        let method = self.app_method(&format!("direct.{fmapper}.search.atomic"));
+
+        if let Some(jvec) = self.request(&method, vec![query])? {
+            if let json::JsonValue::Array(vec) = jvec {
+                return Ok(vec);
+            }
+        }
+
+        Err(format!("Unexpected response to method {method}"))
     }
 }
