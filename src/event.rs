@@ -35,6 +35,22 @@ impl fmt::Display for EgEvent {
 }
 
 impl EgEvent {
+
+    pub fn new(textcode: &str) -> Self {
+        EgEvent {
+            code: 0,
+            textcode: textcode.to_string(),
+            payload: json::JsonValue::Null,
+            desc: None,
+            debug: None,
+            note: None,
+            servertime: None,
+            ilsperm: None,
+            ilspermloc: 0,
+            success: false,
+        }
+    }
+
     pub fn code(&self) -> isize {
         self.code
     }

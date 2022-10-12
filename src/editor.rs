@@ -1,38 +1,99 @@
 use opensrf as osrf;
 use super::event::EgEvent;
 use json::JsonValue;
-//use log::{debug, error, trace, warn};
-use std::cell::RefCell;
-use std::rc::Rc;
 //use std::fmt;
 
-const DEFAULT_EDITOR_PERSONALITY: &str = "open-ils.cstore";
+#[derive(Debug, Clone, PartialEq)]
+pub enum Personality {
+    Cstore,
+    Pcrud,
+    ReporterStore,
+}
+
+impl From<&str> for Personality {
+    fn from(s: &str) -> Self {
+        match s {
+            "open-ils.pcrud" => Self::Pcrud,
+            "open-ils.reporter-store" => Self::ReporterStore,
+            _ => Self::Cstore
+        }
+    }
+}
+
+impl Into<&str> for Personality {
+    fn into(self) -> &'static str {
+        match self {
+            Self::Cstore => "open-ils.cstore",
+            Self::Pcrud => "open-ils.pcrud",
+            Self::ReporterStore => "open-ils.reporter-store",
+        }
+    }
+}
 
 pub struct Editor {
-    //client: Rc<RefCell<osrf::Client>>,
     client: osrf::ClientHandle,
-    personality: String,
+    personality: Personality,
     authtoken: Option<String>,
     authtime: Option<usize>,
     requestor: Option<JsonValue>,
+
+    /// Most recent non-success event
     last_event: Option<EgEvent>,
 }
 
 impl Editor {
 
+    pub fn new(client: &osrf::ClientHandle) -> Self {
+        Editor {
+            client: client.clone(),
+            personality: "".into(),
+            authtoken: None,
+            authtime: None,
+            requestor: None,
+            last_event: None,
+        }
+    }
+
+    pub fn new_with_auth(client: &osrf::ClientHandle, authtoken: &str) -> Self {
+        let mut editor = Editor::new(client);
+        editor.authtoken = Some(authtoken.to_string());
+        editor
+    }
+
     pub fn checkauth(&mut self) -> Result<bool, String> {
 
-        if self.authtoken.is_none() {
-            return Ok(false);
-        }
-
-        let token = self.authtoken().unwrap();
+        let token = match self.authtoken() {
+            Some(t) => t,
+            None => { return Ok(false); }
+        };
 
         let service = "open-ils.auth";
         let method = "open-ils.auth.session.retrieve";
         let params = vec![json::from(token), json::from(true)];
 
         let resp_op = self.client.sendrecv(service, method, params)?.next();
+
+        if let Some(ref user) = resp_op {
+
+            if let Some(evt) = EgEvent::parse(&user) {
+                log::debug!("Editor checkauth call returned non-success event: {}", evt);
+                self.set_last_event(evt);
+                return Ok(false);
+            }
+
+            if user.has_key("usrname") {
+                self.requestor = Some(user.to_owned());
+                return Ok(true);
+            }
+        }
+
+        log::debug!("Editor checkauth call returned unexpected data: {resp_op:?}");
+
+        self.set_last_event(EgEvent::new("NO_SESSION"));
+        Ok(false)
+
+        /*
+
 
         let resp = match resp_op {
             Some(r) => r,
@@ -41,30 +102,47 @@ impl Editor {
             }
         };
 
+        log::trace!("Editor checkauth got: {resp}");
+
         let evt = match EgEvent::parse(&resp) {
             Some(e) => e,
-            None => {
-                return Err(format!(
-                    "Auth session check returned unexpected response: {resp:?}"));
-            }
+            None => EgEvent::new("NO_SESSION"),
         };
 
+        log::debug!("Editor checkauth() got {}", evt);
+
         if evt.textcode().ne("SUCCESS") {
-            // TODO set last_event
+            self.last_event = Some(evt);
             return Ok(false);
         }
 
         let payload = evt.payload();
 
-        // Auth session is valid.  Let's update some local data
+        // Auth session is valid.  Update some local data.
         self.authtime = osrf::util::json_usize(&payload["authtime"]);
         self.requestor = Some(payload["userobj"].to_owned());
 
         Ok(true)
+        */
     }
 
     pub fn authtoken(&self) -> Option<&str> {
         self.authtoken.as_deref()
+    }
+
+    pub fn authtime(&self) -> Option<usize> {
+        self.authtime
+    }
+
+    pub fn requestor(&self) -> Option<&JsonValue> {
+        match &self.requestor {
+            Some(r) => Some(r),
+            None => None
+        }
+    }
+
+    fn set_last_event(&mut self, evt: EgEvent) {
+        self.last_event = Some(evt);
     }
 }
 

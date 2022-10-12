@@ -1,3 +1,5 @@
+pub use editor::Editor;
+
 pub mod auth;
 pub mod db;
 pub mod event;
