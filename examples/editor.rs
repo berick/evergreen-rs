@@ -1,10 +1,17 @@
 use eg::idl;
 use evergreen as eg;
 use opensrf::Client;
-use opensrf::ClientConfig;
+use opensrf::Config;
+use opensrf::Logger;
 
 fn main() -> Result<(), String> {
-    let conf = ClientConfig::from_file("conf/opensrf_client.yml")?;
+    let mut conf = Config::from_file("conf/opensrf_client.yml")?;
+    let con = conf.set_primary_connection("service", "private.localhost")?;
+
+    let mut logger = Logger::new();
+    logger.set_loglevel(con.connection_type().log_level());
+    logger.set_facility(con.connection_type().log_facility());
+    logger.init().unwrap();
 
     println!("Parsing IDL");
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;

@@ -4,9 +4,17 @@ use eg::idldb::{IdlClassSearch, OrderBy, OrderByDir, Translator};
 use evergreen as eg;
 use getopts;
 use std::env;
+use opensrf::Config;
+use opensrf::Logger;
 
 fn main() -> Result<(), String> {
-    env_logger::init();
+    let mut conf = Config::from_file("conf/opensrf_client.yml")?;
+    let con = conf.set_primary_connection("service", "private.localhost")?;
+
+    let mut logger = Logger::new();
+    logger.set_loglevel(con.connection_type().log_level());
+    logger.set_facility(con.connection_type().log_facility());
+    logger.init().unwrap();
 
     let args: Vec<String> = env::args().collect();
     let mut opts = getopts::Options::new();

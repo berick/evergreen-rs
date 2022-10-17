@@ -33,6 +33,12 @@ impl From<&Personality> for &str {
     }
 }
 
+pub struct QueryOps {
+    limit: Option<usize>,
+    offset: Option<usize>,
+    order_by: Option<(String, String)>,
+}
+
 pub struct Editor {
     client: osrf::ClientHandle,
     session: Option<osrf::SessionHandle>,
@@ -216,7 +222,6 @@ impl Editor {
         T: Into<json::JsonValue>,
     {
         // TODO log the request
-        // TODO substream
 
         let mut req = self.session().request(method, params)?;
         req.recv(self.timeout)
@@ -246,7 +251,7 @@ impl Editor {
 
         match class.fieldmapper() {
             Some(s) => Ok(s.replace("::", ".")),
-            None => Err(format!("IDL class has no fieldmapper name: {idlclass}"))
+            None => Err(format!("IDL class has no fieldmapper value: {idlclass}"))
         }
     }
 
@@ -261,11 +266,10 @@ impl Editor {
         self.request(&method, vec![id])
     }
 
-    pub fn search(&mut self, idlclass: &str, query: json::JsonValue) -> Result<Vec<json::JsonValue>, String>
-    {
+    pub fn search(&mut self, idlclass: &str, query: json::JsonValue) -> Result<Vec<json::JsonValue>, String> {
+
         let fmapper = self.get_fieldmapper(idlclass)?;
 
-        // TODO substream runs wihout atomic
         let method = self.app_method(&format!("direct.{fmapper}.search.atomic"));
 
         if let Some(jvec) = self.request(&method, vec![query])? {
