@@ -8,10 +8,8 @@ fn main() -> Result<(), String> {
     let mut conf = Config::from_file("conf/opensrf_client.yml")?;
     let con = conf.set_primary_connection("service", "private.localhost")?;
 
-    let mut logger = Logger::new();
-    logger.set_loglevel(con.connection_type().log_level());
-    logger.set_facility(con.connection_type().log_facility());
-    logger.init().unwrap();
+    let ctype = con.connection_type();
+    Logger::new(ctype.log_level(), ctype.log_facility()).init().unwrap();
 
     println!("Parsing IDL");
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
