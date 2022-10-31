@@ -8,11 +8,11 @@ use opensrf::Config;
 use opensrf::Logger;
 
 fn main() -> Result<(), String> {
-    let mut conf = Config::from_file("conf/opensrf_client.yml")?;
+    let mut conf = Config::from_file("conf/opensrf.yml")?;
     let con = conf.set_primary_connection("service", "private.localhost")?;
 
     let ctype = con.connection_type();
-    Logger::new(ctype.log_level(), ctype.log_facility()).init().unwrap();
+    Logger::new("client", ctype.log_level(), ctype.log_facility()).init().unwrap();
 
     let args: Vec<String> = env::args().collect();
     let mut opts = getopts::Options::new();

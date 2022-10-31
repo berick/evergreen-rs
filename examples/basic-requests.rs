@@ -5,15 +5,15 @@ use opensrf::Config;
 use opensrf::Logger;
 
 fn main() -> Result<(), String> {
-    let mut conf = Config::from_file("conf/opensrf_client.yml")?;
+    let mut conf = Config::from_file("conf/opensrf.yml")?;
     let con = conf.set_primary_connection("service", "private.localhost")?;
 
     let ctype = con.connection_type();
-    Logger::new(ctype.log_level(), ctype.log_facility()).init().unwrap();
+    Logger::new("client", ctype.log_level(), ctype.log_facility()).init().unwrap();
 
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
 
-    let mut client = Client::new(conf)?;
+    let mut client = Client::new(conf.to_shared())?;
 
     client.set_serializer(idl::Parser::as_serializer(&idl));
 
