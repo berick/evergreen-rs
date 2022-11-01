@@ -40,7 +40,7 @@ pub struct QueryOps {
 }
 
 pub struct Editor {
-    client: osrf::ClientHandle,
+    client: osrf::Client,
     session: Option<osrf::SessionHandle>,
     idl: Arc<idl::Parser>,
 
@@ -62,7 +62,7 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>) -> Self {
+    pub fn new(client: &osrf::Client, idl: &Arc<idl::Parser>) -> Self {
         Editor {
             client: client.clone(),
             idl: idl.clone(),
@@ -78,14 +78,14 @@ impl Editor {
         }
     }
 
-    pub fn with_auth(client: &osrf::ClientHandle, idl: &Arc<idl::Parser>, authtoken: &str) -> Self {
+    pub fn with_auth(client: &osrf::Client, idl: &Arc<idl::Parser>, authtoken: &str) -> Self {
         let mut editor = Editor::new(client, idl);
         editor.authtoken = Some(authtoken.to_string());
         editor
     }
 
     pub fn with_auth_xact(
-        client: &osrf::ClientHandle,
+        client: &osrf::Client,
         idl: &Arc<idl::Parser>,
         authtoken: &str,
     ) -> Self {

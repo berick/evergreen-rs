@@ -36,7 +36,7 @@ message-bus:
   connections:
     service:
       credentials: private-account
-      loglevel: info
+      loglevel: debug
       syslog-facility: local0
       actlog-facility: local1
     gateway:

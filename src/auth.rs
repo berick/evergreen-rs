@@ -1,6 +1,6 @@
 use super::event;
 use json;
-use opensrf::client::ClientHandle;
+use opensrf::client::Client;
 
 const LOGIN_TIMEOUT: i32 = 30;
 
@@ -100,7 +100,7 @@ pub struct AuthSession {
 }
 
 impl AuthSession {
-    pub fn login(client: &mut ClientHandle, args: &AuthLoginArgs) -> Result<AuthSession, String> {
+    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<AuthSession, String> {
         let params = vec![args.to_json_value()];
         let mut ses = client.session("open-ils.auth");
         let mut req = ses.request("open-ils.auth.login", params)?;

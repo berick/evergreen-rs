@@ -43,10 +43,39 @@ impl OrderBy {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pager {
+    limit: usize,
+    offset: usize,
+}
+
+impl Pager {
+    pub fn new(limit: usize, offset: usize) -> Self {
+        Pager {
+            limit,
+            offset,
+        }
+    }
+
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn reset(&mut self) {
+        self.limit = 0;
+        self.offset = 0
+    }
+}
+
 pub struct IdlClassSearch {
     pub classname: String,
     pub filter: Option<JsonValue>,
     pub order_by: Option<Vec<OrderBy>>,
+    pub pager: Option<Pager>,
 }
 
 impl IdlClassSearch {
@@ -55,6 +84,7 @@ impl IdlClassSearch {
             classname: classname.to_string(),
             filter: None,
             order_by: None,
+            pager: None,
         }
     }
 
@@ -76,6 +106,14 @@ impl IdlClassSearch {
 
     pub fn set_order_by(&mut self, v: Vec<OrderBy>) {
         self.order_by = Some(v);
+    }
+
+    pub fn pager(&self) -> &Option<Pager> {
+        &self.pager
+    }
+
+    pub fn set_pager(&mut self, pager: Pager) {
+        self.pager = Some(pager);
     }
 }
 
@@ -125,6 +163,10 @@ impl Translator {
             query += &self.compile_class_order_by(order);
         }
 
+        if let Some(pager) = &search.pager {
+            query += &self.compile_pager(pager);
+        }
+
         debug!("search() executing query: {query}");
 
         let query_res = self.db.borrow_mut().client().query(&query[..], &[]);
@@ -140,7 +182,7 @@ impl Translator {
         Ok(results)
     }
 
-    pub fn compile_class_order_by(&self, order: &Vec<OrderBy>) -> String {
+    fn compile_class_order_by(&self, order: &Vec<OrderBy>) -> String {
         let mut sql = String::new();
         let mut count = order.len();
 
@@ -158,7 +200,7 @@ impl Translator {
         sql
     }
 
-    pub fn compile_class_select(&self, class: &idl::Class) -> String {
+    fn compile_class_select(&self, class: &idl::Class) -> String {
         let mut sql = String::from("SELECT");
 
         for (name, field) in class.fields() {
@@ -170,7 +212,11 @@ impl Translator {
         String::from(&sql[0..sql.len() - 1]) // Trim final ","
     }
 
-    pub fn json_literal_to_sql_value(&self, j: &JsonValue) -> Option<String> {
+    fn compile_pager(&self, pager: &Pager) -> String {
+        format!(" LIMIT {} OFFSET {}", pager.limit(), pager.offset())
+    }
+
+    fn json_literal_to_sql_value(&self, j: &JsonValue) -> Option<String> {
         match j {
             JsonValue::Number(n) => Some(n.to_string()),
             JsonValue::String(s) => Some(format!("'{}'", s.replace("'", "''"))),
@@ -185,7 +231,7 @@ impl Translator {
     }
 
     /// Generate a WHERE clause from a JSON query object for an IDL class.
-    pub fn compile_class_filter(
+    fn compile_class_filter(
         &self,
         class: &idl::Class,
         filter: &JsonValue,
@@ -241,7 +287,7 @@ impl Translator {
     }
 
     /// Turn an object-based subquery into part of the WHERE AND.
-    pub fn compile_class_filter_object(&self, obj: &JsonValue) -> Result<String, String> {
+    fn compile_class_filter_object(&self, obj: &JsonValue) -> Result<String, String> {
         let mut sql = String::new();
 
         for (key, val) in obj.entries() {
@@ -268,7 +314,7 @@ impl Translator {
     }
 
     /// Turn an array-based subquery into part of the WHERE AND.
-    pub fn compile_class_filter_array(&self, a: &JsonValue) -> String {
+    fn compile_class_filter_array(&self, a: &JsonValue) -> String {
         let mut sql = String::from(" IN (");
         let mut first = true;
 
@@ -288,7 +334,7 @@ impl Translator {
     }
 
     /// Maps a PG row into an IDL-based JsonValue;
-    pub fn row_to_idl(&self, class: &idl::Class, row: &pg::Row) -> Result<JsonValue, String> {
+    fn row_to_idl(&self, class: &idl::Class, row: &pg::Row) -> Result<JsonValue, String> {
         let mut obj = JsonValue::new_object();
         obj[idl::CLASSNAME_KEY] = json::from(class.classname());
 
@@ -303,7 +349,7 @@ impl Translator {
     }
 
     /// Translate a PG-typed row value into a JsonValue
-    pub fn col_value_to_json_value(
+    fn col_value_to_json_value(
         &self,
         row: &pg::Row,
         index: usize,

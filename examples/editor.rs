@@ -9,13 +9,13 @@ fn main() -> Result<(), String> {
     let con = conf.set_primary_connection("service", "private.localhost")?;
 
     let ctype = con.connection_type();
-    Logger::new("client", ctype.log_level(), ctype.log_facility()).init().unwrap();
+    Logger::new(ctype.log_level(), ctype.log_facility()).init().unwrap();
 
     println!("Parsing IDL");
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
     println!("Done parsing IDL");
 
-    let mut client = Client::new(conf.to_shared())?;
+    let mut client = Client::connect(conf.to_shared())?;
 
     client.set_serializer(idl::Parser::as_serializer(&idl));
 
