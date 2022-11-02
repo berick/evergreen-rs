@@ -84,11 +84,7 @@ impl Editor {
         editor
     }
 
-    pub fn with_auth_xact(
-        client: &osrf::Client,
-        idl: &Arc<idl::Parser>,
-        authtoken: &str,
-    ) -> Self {
+    pub fn with_auth_xact(client: &osrf::Client, idl: &Arc<idl::Parser>, authtoken: &str) -> Self {
         let mut editor = Editor::new(client, idl);
         editor.authtoken = Some(authtoken.to_string());
         editor.xact_wanted = true;
@@ -239,7 +235,7 @@ impl Editor {
     fn get_class(&self, idlclass: &str) -> Result<&idl::Class, String> {
         match self.idl.classes().get(idlclass) {
             Some(c) => Ok(c),
-            None => Err(format!("No such IDL class: {idlclass}"))
+            None => Err(format!("No such IDL class: {idlclass}")),
         }
     }
 
@@ -251,7 +247,7 @@ impl Editor {
 
         match class.fieldmapper() {
             Some(s) => Ok(s.replace("::", ".")),
-            None => Err(format!("IDL class has no fieldmapper value: {idlclass}"))
+            None => Err(format!("IDL class has no fieldmapper value: {idlclass}")),
         }
     }
 
@@ -266,8 +262,11 @@ impl Editor {
         self.request(&method, vec![id])
     }
 
-    pub fn search(&mut self, idlclass: &str, query: json::JsonValue) -> Result<Vec<json::JsonValue>, String> {
-
+    pub fn search(
+        &mut self,
+        idlclass: &str,
+        query: json::JsonValue,
+    ) -> Result<Vec<json::JsonValue>, String> {
         let fmapper = self.get_fieldmapper(idlclass)?;
 
         let method = self.app_method(&format!("direct.{fmapper}.search.atomic"));

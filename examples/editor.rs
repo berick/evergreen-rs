@@ -9,7 +9,9 @@ fn main() -> Result<(), String> {
     let con = conf.set_primary_connection("service", "private.localhost")?;
 
     let ctype = con.connection_type();
-    Logger::new(ctype.log_level(), ctype.log_facility()).init().unwrap();
+    Logger::new(ctype.log_level(), ctype.log_facility())
+        .init()
+        .unwrap();
 
     println!("Parsing IDL");
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
@@ -37,7 +39,7 @@ fn main() -> Result<(), String> {
         println!("Fetched org unit: {}", org["shortname"]);
     }
 
-    let query = json::object!{"id": json::object!{"<": 10}};
+    let query = json::object! {"id": json::object!{"<": 10}};
     for perm in editor.search("ppl", query)? {
         println!("Search found permission: {}", perm["code"]);
     }

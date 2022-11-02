@@ -9,7 +9,9 @@ fn main() -> Result<(), String> {
     let con = conf.set_primary_connection("service", "private.localhost")?;
 
     let ctype = con.connection_type();
-    Logger::new(ctype.log_level(), ctype.log_facility()).init().unwrap();
+    Logger::new(ctype.log_level(), ctype.log_facility())
+        .init()
+        .unwrap();
 
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
 

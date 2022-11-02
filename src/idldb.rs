@@ -3,6 +3,7 @@ use super::db;
 use super::idl;
 use json::JsonValue;
 use log::{debug, trace};
+use pg::types::ToSql;
 use postgres as pg;
 use std::cell::RefCell;
 use std::fmt;
@@ -51,10 +52,7 @@ pub struct Pager {
 
 impl Pager {
     pub fn new(limit: usize, offset: usize) -> Self {
-        Pager {
-            limit,
-            offset,
-        }
+        Pager { limit, offset }
     }
 
     pub fn limit(&self) -> usize {
@@ -155,8 +153,17 @@ impl Translator {
 
         let mut query = format!("{select} FROM {tablename}");
 
+        // Track String parameters so we can use query binding on the
+        // them in the final query.  All other types, being derived
+        // from JsonValue, have a known shape and size (number, bool,
+        // etc.), so query binding is less critical from a sql-injection
+        // perspective.
+        let mut param_list: Vec<String> = Vec::new();
+        let mut param_index: usize = 1;
+
         if let Some(filter) = &search.filter {
-            query += &self.compile_class_filter(&class, filter)?;
+            query += &self.compile_class_filter(
+                &class, filter, &mut param_index, &mut param_list)?;
         }
 
         if let Some(order) = &search.order_by {
@@ -169,7 +176,16 @@ impl Translator {
 
         debug!("search() executing query: {query}");
 
-        let query_res = self.db.borrow_mut().client().query(&query[..], &[]);
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
+        for p in param_list.iter() {
+            params.push(p);
+        }
+
+        let query_res = self
+            .db
+            .borrow_mut()
+            .client()
+            .query(&query[..], params.as_slice());
 
         if let Err(e) = query_res {
             return Err(format!("DB query failed: {e}"));
@@ -216,25 +232,13 @@ impl Translator {
         format!(" LIMIT {} OFFSET {}", pager.limit(), pager.offset())
     }
 
-    fn json_literal_to_sql_value(&self, j: &JsonValue) -> Option<String> {
-        match j {
-            JsonValue::Number(n) => Some(n.to_string()),
-            JsonValue::String(s) => Some(format!("'{}'", s.replace("'", "''"))),
-            JsonValue::Short(s) => Some(format!("'{}'", s.replace("'", "''"))),
-            JsonValue::Null => Some("NULL".to_string()),
-            JsonValue::Boolean(b) => match b {
-                true => Some("TRUE".to_string()),
-                false => Some("FALSE".to_string()),
-            },
-            _ => None,
-        }
-    }
-
     /// Generate a WHERE clause from a JSON query object for an IDL class.
     fn compile_class_filter(
         &self,
         class: &idl::Class,
         filter: &JsonValue,
+        param_index: &mut usize,
+        param_list: &mut Vec<String>,
     ) -> Result<String, String> {
         if !filter.is_object() {
             return Err(format!(
@@ -270,34 +274,67 @@ impl Translator {
 
             sql += &format!(" {field}");
 
-            if subq.is_string() || subq.is_number() {
-                let literal = self.json_literal_to_sql_value(subq);
-                sql += &format!(" = {}", literal.unwrap());
-            } else if subq.is_boolean() || subq.is_null() {
-                let literal = self.json_literal_to_sql_value(subq);
-                sql += &format!(" IS {}", literal.unwrap());
-            } else if subq.is_array() {
-                sql += &self.compile_class_filter_array(&subq);
-            } else {
-                sql += &self.compile_class_filter_object(&subq)?;
+            match subq {
+                JsonValue::Array(_) => {
+                    sql += &self.compile_class_filter_array(param_index, param_list, &subq)?;
+                }
+                JsonValue::Object(_) => {
+                    sql += &self.compile_class_filter_object(param_index, param_list, &subq)?;
+                }
+                JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Short(_) => {
+                    sql += &format!(
+                        " {}",
+                        self.append_json_literal(param_index, param_list, subq, Some("="))?
+                    );
+                }
+                JsonValue::Boolean(_) | JsonValue::Null => {
+                    sql += &format!(
+                        " {}",
+                        self.append_json_literal(param_index, param_list, subq, Some("IS"))?
+                    );
+                }
             }
         }
 
         Ok(sql)
     }
 
+    fn append_json_literal(
+        &self,
+        param_index: &mut usize,
+        param_list: &mut Vec<String>,
+        obj: &JsonValue,
+        operand: Option<&str>,
+    ) -> Result<String, String> {
+        if obj.is_object() || obj.is_array() {
+            return Err(format!("Cannot format non-literl as a literal: {obj:?}"));
+        }
+
+        let opstr = match operand {
+            Some(op) => format!("{op} "),
+            None => String::new(),
+        };
+
+        if obj.is_string() {
+            let s = format!("{opstr}${param_index}");
+            param_list.push(obj.to_string());
+            *param_index += 1;
+            Ok(s)
+        } else {
+            Ok(format!("{opstr}{}", obj.to_string()))
+        }
+    }
+
     /// Turn an object-based subquery into part of the WHERE AND.
-    fn compile_class_filter_object(&self, obj: &JsonValue) -> Result<String, String> {
+    fn compile_class_filter_object(
+        &self,
+        param_index: &mut usize,
+        param_list: &mut Vec<String>,
+        obj: &JsonValue,
+    ) -> Result<String, String> {
         let mut sql = String::new();
 
         for (key, val) in obj.entries() {
-            let value = match self.json_literal_to_sql_value(val) {
-                Some(v) => v,
-                None => {
-                    return Err(format!("Arrays/Objects not supported here: {val:?}"));
-                }
-            };
-
             let operand = key.to_uppercase();
 
             match operand.as_str() {
@@ -307,30 +344,37 @@ impl Translator {
                 }
             }
 
-            sql += &format!(" {operand} {value}");
+            sql += &format!(
+                " {}",
+                self.append_json_literal(param_index, param_list, val, Some(&operand))?
+            );
+
+            // A filter object may only contain a single operand => value combo
+            break;
         }
 
         Ok(sql)
     }
 
     /// Turn an array-based subquery into part of the WHERE AND.
-    fn compile_class_filter_array(&self, a: &JsonValue) -> String {
+    fn compile_class_filter_array(
+        &self,
+        param_index: &mut usize,
+        param_list: &mut Vec<String>,
+        arr: &JsonValue,
+    ) -> Result<String, String> {
         let mut sql = String::from(" IN (");
-        let mut first = true;
+        let mut strings: Vec<String> = Vec::new();
 
-        for m in a.members() {
-            if let Some(v) = self.json_literal_to_sql_value(m) {
-                if first {
-                    first = false;
-                } else {
-                    sql += ", "
-                }
-                sql += &format!("{v}");
-            }
+        for val in arr.members() {
+            strings.push(self.append_json_literal(param_index, param_list, val, None)?);
         }
+
+        sql += &strings.join(",");
+
         sql += ")";
 
-        sql
+        Ok(sql)
     }
 
     /// Maps a PG row into an IDL-based JsonValue;
@@ -349,11 +393,7 @@ impl Translator {
     }
 
     /// Translate a PG-typed row value into a JsonValue
-    fn col_value_to_json_value(
-        &self,
-        row: &pg::Row,
-        index: usize,
-    ) -> Result<JsonValue, String> {
+    fn col_value_to_json_value(&self, row: &pg::Row, index: usize) -> Result<JsonValue, String> {
         let col_type = row.columns().get(index).map(|c| c.type_().name()).unwrap();
 
         match col_type {
