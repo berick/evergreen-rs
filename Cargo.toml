@@ -15,8 +15,9 @@ yaml-rust = "0.4.5"
 log = "0.4.14"
 log4rs = "1.0.0"
 json = "0.12.4"
-postgres = { version = "^0.19.4", features = ["with-chrono-0_4"] }
-getopts = "~0.2"
+postgres = { version = "^0.19.4" }
+getopts = "0.2.21"
+threadpool = "1.8.1"
 
 # Sometimes this is just simpler than log4rs
 env_logger = "~0.9"
