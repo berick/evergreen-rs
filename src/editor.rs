@@ -1,6 +1,7 @@
 use super::event::EgEvent;
 use super::idl;
 use opensrf as osrf;
+use osrf::params::ApiParams;
 use std::sync::Arc;
 
 const DEFAULT_TIMEOUT: i32 = 60;
@@ -107,7 +108,7 @@ impl Editor {
         let method = "open-ils.auth.session.retrieve";
         let params = vec![json::from(token), json::from(true)];
 
-        let resp_op = self.client.sendrecv(service, method, params)?.next();
+        let resp_op = self.client.sendrecv(service, method, &params)?.next();
 
         if let Some(ref user) = resp_op {
             if let Some(evt) = EgEvent::parse(&user) {
@@ -209,13 +210,9 @@ impl Editor {
     /// Send an API request to our service/worker with parameters.
     ///
     /// All requests return at most a single response.
-    fn request<T>(
-        &mut self,
-        method: &str,
-        params: Vec<T>,
-    ) -> Result<Option<json::JsonValue>, String>
+    fn request<T>(&mut self, method: &str, params: T) -> Result<Option<json::JsonValue>, String>
     where
-        T: Into<json::JsonValue>,
+        T: Into<ApiParams>,
     {
         // TODO log the request
 
@@ -253,13 +250,13 @@ impl Editor {
 
     pub fn retrieve<T>(&mut self, idlclass: &str, id: T) -> Result<Option<json::JsonValue>, String>
     where
-        T: Into<json::JsonValue>,
+        T: Into<ApiParams>,
     {
         let fmapper = self.get_fieldmapper(idlclass)?;
 
         let method = self.app_method(&format!("direct.{fmapper}.retrieve"));
 
-        self.request(&method, vec![id])
+        self.request(&method, id)
     }
 
     pub fn search(

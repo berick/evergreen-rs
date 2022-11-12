@@ -1,23 +1,16 @@
 use eg::idl;
 use evergreen as eg;
-use opensrf::Client;
-use opensrf::Config;
-use opensrf::Logger;
+use opensrf as osrf;
+use osrf::Client;
 
 fn main() -> Result<(), String> {
-    let mut conf = Config::from_file("conf/opensrf.yml")?;
-    let con = conf.set_primary_connection("service", "private.localhost")?;
-
-    let ctype = con.connection_type();
-    Logger::new(ctype.log_level(), ctype.log_facility())
-        .init()
-        .unwrap();
+    let conf = osrf::init("service")?;
 
     println!("Parsing IDL");
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
     println!("Done parsing IDL");
 
-    let mut client = Client::connect(conf.to_shared())?;
+    let mut client = Client::connect(conf.into_shared())?;
 
     client.set_serializer(idl::Parser::as_serializer(&idl));
 
@@ -35,7 +28,7 @@ fn main() -> Result<(), String> {
         println!("Auth Check OK: {}", editor.requestor().unwrap()["usrname"]);
     }
 
-    if let Some(org) = editor.retrieve("aou", json::from(4))? {
+    if let Some(org) = editor.retrieve("aou", 4)? {
         println!("Fetched org unit: {}", org["shortname"]);
     }
 

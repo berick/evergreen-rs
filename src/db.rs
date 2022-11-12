@@ -275,7 +275,7 @@ impl DatabaseConnection {
         }
     }
 
-    pub fn to_shared(self) -> Rc<RefCell<DatabaseConnection>> {
+    pub fn into_shared(self) -> Rc<RefCell<DatabaseConnection>> {
         Rc::new(RefCell::new(self))
     }
 }

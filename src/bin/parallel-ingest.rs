@@ -133,7 +133,6 @@ fn ingest_records(
     connection: &mut DatabaseConnection,
     ids: &mut Vec<i64>,
 ) {
-
     if options.do_browse {
         // Cannot be run in parallel
         reingest_browse(options, connection, ids);
@@ -159,7 +158,6 @@ fn ingest_records(
     let pool = ThreadPool::new(options.max_threads);
 
     while !ids.is_empty() {
-
         let end = match ids.len() {
             n if n >= options.batch_size => options.batch_size,
             _ => ids.len(),

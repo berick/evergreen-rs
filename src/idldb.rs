@@ -162,8 +162,8 @@ impl Translator {
         let mut param_index: usize = 1;
 
         if let Some(filter) = &search.filter {
-            query += &self.compile_class_filter(
-                &class, filter, &mut param_index, &mut param_list)?;
+            query +=
+                &self.compile_class_filter(&class, filter, &mut param_index, &mut param_list)?;
         }
 
         if let Some(order) = &search.order_by {

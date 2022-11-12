@@ -1,21 +1,14 @@
 use eg::idl;
 use evergreen as eg;
-use opensrf::Client;
-use opensrf::Config;
-use opensrf::Logger;
+use opensrf as osrf;
+use osrf::Client;
 
 fn main() -> Result<(), String> {
-    let mut conf = Config::from_file("conf/opensrf.yml")?;
-    let con = conf.set_primary_connection("service", "private.localhost")?;
-
-    let ctype = con.connection_type();
-    Logger::new(ctype.log_level(), ctype.log_facility())
-        .init()
-        .unwrap();
+    let conf = osrf::init("service")?;
 
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
 
-    let mut client = Client::connect(conf.to_shared())?;
+    let mut client = Client::connect(conf.into_shared())?;
 
     client.set_serializer(idl::Parser::as_serializer(&idl));
 
@@ -49,7 +42,7 @@ fn main() -> Result<(), String> {
 
     for _ in 0..9 {
         // Iterator example
-        for user in ses.sendrecv(method, params.clone())? {
+        for user in ses.sendrecv(method, &params)? {
             println!(
                 "{} {} home_ou={}",
                 user["id"], user["usrname"], user["home_ou"]["name"]
@@ -58,7 +51,7 @@ fn main() -> Result<(), String> {
     }
 
     // Manual request management example
-    let mut req = ses.request(method, params)?;
+    let mut req = ses.request(method, &params)?;
 
     while let Some(user) = req.recv(10)? {
         println!(
