@@ -19,8 +19,21 @@ postgres = { version = "^0.19.4" }
 getopts = "0.2.21"
 threadpool = "1.8.1"
 
+# for egsh
+# could be make optional
+indicatif = "0.17.2"
+
 # Sometimes this is just simpler than log4rs
 env_logger = "~0.9"
+
+[[bin]]
+name = "egsh"
+
+[[bin]]
+name = "parallel-ingest"
+
+[[bin]]
+name = "marc-export"
 
 [[example]]
 name = "basic-requests"
