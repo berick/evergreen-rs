@@ -28,18 +28,21 @@ pub const CLASSNAME_KEY: &str = "_classname";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataType {
+    Id,
     Int,
     Float,
     Text,
     Bool,
     Link,
+    Money,
+    OrgUnit,
     Timestamp,
 }
 
 impl DataType {
     pub fn is_numeric(&self) -> bool {
         match *self {
-            Self::Int | Self::Float => true,
+            Self::Id | Self::Int | Self::Float | Self::Money | Self::OrgUnit => true,
             _ => false,
         }
     }
@@ -63,11 +66,14 @@ impl Into<&'static str> for DataType {
 impl From<&str> for DataType {
     fn from(s: &str) -> Self {
         match s {
+            "id" => Self::Id,
             "int" => Self::Int,
             "float" => Self::Float,
             "text" => Self::Text,
             "bool" => Self::Bool,
             "timestamp" => Self::Timestamp,
+            "money" => Self::Money,
+            "org_unit" => Self::OrgUnit,
             "link" => Self::Link,
             _ => Self::Text,
         }

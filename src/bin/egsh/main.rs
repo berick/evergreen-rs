@@ -13,6 +13,7 @@ use indicatif::ProgressBar;
 use opensrf as osrf;
 use evergreen as eg;
 use eg::idl;
+use eg::idl::DataType;
 use eg::idldb;
 use eg::idldb::IdlClassSearch;
 use eg::db::DatabaseConnection;
@@ -23,10 +24,7 @@ const PROMPT: &str = "egsh#";
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 
 fn main() -> Result<(), String> {
-    let mut opts = getopts::Options::new();
-    let (conf, _) = osrf::init_with_options("service", &mut opts)?;
-
-    let mut shell = Shell::setup(conf.into_shared(), &mut opts);
+    let mut shell = Shell::setup();
     shell.main_loop();
 
     Ok(())
@@ -67,11 +65,18 @@ struct Shell {
 
 impl Shell {
 
-    fn setup(config: Arc<conf::Config>, opts: &mut getopts::Options) -> Shell {
+    fn setup() -> Shell {
+        let mut opts = getopts::Options::new();
+
         opts.optflag("", "with-database", "Open Direct Database Connection");
         opts.optopt("", "idl-file", "Path to IDL file", "IDL_PATH");
 
-        DatabaseConnection::append_options(opts);
+        DatabaseConnection::append_options(&mut opts);
+
+        let conf = match osrf::init_with_options("service", &mut opts) {
+            Ok((c, _)) => c,
+            Err(e) => panic!("Cannot init to OpenSRF: {}", e),
+        };
 
         let args: Vec<String> = env::args().collect();
         let params = opts.parse(&args[1..]).unwrap();
@@ -84,7 +89,7 @@ impl Shell {
         };
 
         let mut shell = Shell {
-            config,
+            config: conf.into_shared(),
             idl,
             db: None,
             db_translator: None,
@@ -125,99 +130,129 @@ impl Shell {
         loop {
             print!("{PROMPT} ");
             io::stdout().flush().unwrap();
-            if !self.read_one_command() {
-                break;
+            if let Err(e) = self.read_one_command() {
+                eprintln!("Command failed: {e}");
             }
         }
     }
 
-    /// Returns true if we should keep going.
-    fn read_one_command(&mut self) -> bool {
+    fn read_one_command(&mut self) -> Result<(), String> {
 
         let mut user_input = String::new();
 
-        io::stdin().read_line(&mut user_input);
-
-        if user_input.len() == 0 {
-            return true;
+        if let Err(e) = io::stdin().read_line(&mut user_input) {
+            return Err(format!("Error reading STDIN: {e}"));
         }
 
         let user_input = user_input.trim();
+
+        if user_input.len() == 0 {
+            return Ok(());
+        }
 
         let parts: Vec<&str> = user_input.split(" ").collect();
 
         let command = parts[0].to_lowercase();
 
         match command.as_str() {
-            "stop" | "quit" | "exit" => {
-                return false;
-            }
+            "stop" | "quit" | "exit" => std::process::exit(0x0),
             "idl" => self.idl_query(&parts[1..]),
-            _ => eprintln!("Unknown command: {command}"),
+            _ => Err(format!("Unknown command: {command}")),
         }
-
-        return true;
     }
 
-    fn idl_query(&mut self, parts: &[&str]) {
-
+    fn idl_query(&mut self, parts: &[&str]) -> Result<(), String> {
         if parts.len() < 3 {
-            eprintln!("'idl' command requires additional parameters: {parts:?}");
-            return;
+            return Err(format!("'idl' command requires additional parameters: {parts:?}"));
         }
 
         match parts[0] {
             "get" => self.idl_get(&parts[1..]),
-            _ => {
-                eprintln!("Could not parse idl query command: {parts:?}");
-                return;
-            }
+            _ => return Err(format!("Could not parse idl query command: {parts:?}")),
         }
     }
 
-    fn idl_get(&mut self, parts: &[&str]) {
+    fn idl_get(&mut self, parts: &[&str]) -> Result<(), String> {
+
+        if parts.len() < 2 {
+            return Err(format!("'idl get' command requires additional parameters: {parts:?}"));
+        }
 
         let mut translator = match self.db_translator.as_mut() {
             Some(t) => t,
-            None => {
-                eprintln!("no translator");
-                return;
-            }
+            None => return Err(format!("Database connection required")),
         };
-
-        if parts.len() < 2 {
-            eprintln!("'idl get' command requires additional parameters: {parts:?}");
-            return;
-        }
 
         let idl_class = match self.idl.classes().get(parts[0]) {
             Some(c) => c,
-            None => {
-                eprintln!("No such IDL class: {}", parts[0]);
-                return;
-            }
+            None => return Err(format!("No such IDL class: {}", parts[0])),
         };
 
         let pkey_field = match idl_class.pkey() {
             Some(f) => f,
             None => {
-                eprintln!(
+                return Err(format!(
                     "IDL class {} has no pkey value and cannot be queried",
                     idl_class.classname()
-                );
-                return;
+                ));
             }
         };
 
+        let idl_field = match idl_class.fields().get(pkey_field) {
+            Some(f) => f,
+            None => return Err(format!(
+                "Field {pkey_field} is listed as pkey, but is not listed as a field"))
+        };
+
+        let pkey_arg = parts[1];
         let mut filter = JsonValue::new_object();
-        filter.insert(&pkey_field, parts[1]);
+
+        // TODO link datatypes?
+        if idl_field.datatype().is_numeric() {
+            let num = match pkey_arg.parse::<f64>() {
+                Ok(n) => n,
+                Err(e) => return Err(format!(
+                    "Pkey is a numeric, but filter value provided is not: {pkey_arg:?}"))
+            };
+
+            filter.insert(&pkey_field, json::from(num)).unwrap();
+
+        } else {
+
+            filter.insert(&pkey_field, json::from(pkey_arg)).unwrap();
+        }
+
+        /*
+        if idl_field.datatype() == &DataType::Int {
+
+            let num = match pkey_arg.parse::<i64>() {
+                Ok(n) => n,
+                Err(e) => return Err(format!(
+                    "Pkey is a number, but value provided is not: {pkey_arg:?}"))
+            };
+
+            filter.insert(&pkey_field, json::from(num)).unwrap();
+        } else if idl_field.datatype() == &DataType::Float {
+            let num = match pkey_arg.parse::<f64>() {
+                Ok(n) => n,
+                Err(e) => return Err(format!(
+                    "Pkey is a number, but value provided is not: {pkey_arg:?}"))
+            };
+
+            filter.insert(&pkey_field, json::from(num)).unwrap();
+        } else {
+            filter.insert(&pkey_field, json::from(pkey_arg)).unwrap();
+        }
+        */
 
         let mut search = IdlClassSearch::new(parts[0]);
         search.set_filter(filter);
 
-        for org in translator.idl_class_search(&search) { // ? todo
+        if let Some(org) = translator.idl_class_search(&search)?.first() {
             println!("{org:?}");
         }
+
+        Ok(())
     }
 }
 
