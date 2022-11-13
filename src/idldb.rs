@@ -9,6 +9,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
+use chrono::prelude::*;
+use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderByDir {
@@ -402,9 +405,17 @@ impl Translator {
                 let v: Option<bool> = row.get(index);
                 Ok(json::from(v))
             }
-            "varchar" | "char(n)" | "text" | "name" | "timestamp" | "timestamptz" => {
+            "varchar" | "char(n)" | "text" | "name" => {
                 let v: Option<String> = row.get(index);
                 Ok(json::from(v))
+            }
+            "timestamp" | "timestamptz" => {
+                let v: Option<chrono::DateTime<Utc>> = row.get(index);
+                let s = match v {
+                    Some(val) => val.format("%FT%T%z").to_string(),
+                    None => return Ok(JsonValue::Null),
+                };
+                Ok(json::from(s))
             }
             "int2" | "smallserial" | "smallint" => {
                 let v: Option<i16> = row.get(index);
@@ -425,6 +436,13 @@ impl Translator {
             "float8" | "double precision" => {
                 let v: Option<f64> = row.get(index);
                 Ok(json::from(v))
+            }
+            "numeric" => {
+                let decimal: Option<Decimal> = row.get(index);
+                match decimal {
+                    Some(d) => Ok(json::from(d.to_string())),
+                    None => Ok(JsonValue::Null)
+                }
             }
             _ => Err(format!("Unsupported column type: {col_type}")),
         }

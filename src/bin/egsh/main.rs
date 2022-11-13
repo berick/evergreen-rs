@@ -207,49 +207,34 @@ impl Shell {
         let pkey_arg = parts[1];
         let mut filter = JsonValue::new_object();
 
-        // TODO link datatypes?
         if idl_field.datatype().is_numeric() {
             let num = match pkey_arg.parse::<f64>() {
                 Ok(n) => n,
                 Err(e) => return Err(format!(
-                    "Pkey is a numeric, but filter value provided is not: {pkey_arg:?}"))
-            };
-
-            filter.insert(&pkey_field, json::from(num)).unwrap();
-
-        } else {
-
-            filter.insert(&pkey_field, json::from(pkey_arg)).unwrap();
-        }
-
-        /*
-        if idl_field.datatype() == &DataType::Int {
-
-            let num = match pkey_arg.parse::<i64>() {
-                Ok(n) => n,
-                Err(e) => return Err(format!(
-                    "Pkey is a number, but value provided is not: {pkey_arg:?}"))
-            };
-
-            filter.insert(&pkey_field, json::from(num)).unwrap();
-        } else if idl_field.datatype() == &DataType::Float {
-            let num = match pkey_arg.parse::<f64>() {
-                Ok(n) => n,
-                Err(e) => return Err(format!(
-                    "Pkey is a number, but value provided is not: {pkey_arg:?}"))
+                    "Pkey is numeric, but filter value provided is not: {pkey_arg:?}"))
             };
 
             filter.insert(&pkey_field, json::from(num)).unwrap();
         } else {
+
             filter.insert(&pkey_field, json::from(pkey_arg)).unwrap();
         }
-        */
 
         let mut search = IdlClassSearch::new(parts[0]);
         search.set_filter(filter);
 
+        let mut fields: Vec<&String> = Vec::new();
+        for (name, field) in idl_class.fields().into_iter() {
+            if !field.is_virtual() {
+                fields.push(name);
+            }
+        }
+        fields.sort();
+
         if let Some(org) = translator.idl_class_search(&search)?.first() {
-            println!("{org:?}");
+            for field in fields {
+                println!("{field}\t{}", org[field]);
+            }
         }
 
         Ok(())

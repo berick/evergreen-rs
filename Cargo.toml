@@ -15,7 +15,8 @@ yaml-rust = "0.4.5"
 log = "0.4.14"
 log4rs = "1.0.0"
 json = "0.12.4"
-postgres = { version = "^0.19.4" }
+postgres = { version = "^0.19.4", features = ["with-chrono-0_4"] }
+rust_decimal = { version = "1.26.1", features = ["db-postgres"] }
 getopts = "0.2.21"
 threadpool = "1.8.1"
 
