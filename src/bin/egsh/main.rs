@@ -1,5 +1,7 @@
 use std::env;
 use std::io;
+use std::path;
+use std::fs;
 use std::io::Write;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,14 +22,16 @@ use eg::db::DatabaseConnection;
 use osrf::conf;
 use osrf::client::Client;
 use rustyline;
+use rustyline::Cmd;
+use rustyline::CompletionType;
 
 const PROMPT: &str = "egsh# ";
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
+const HISTORY_FILE: &str = ".egsh_history";
 
 fn main() -> Result<(), String> {
     let mut shell = Shell::setup();
     shell.main_loop();
-
     Ok(())
 }
 
@@ -62,10 +66,12 @@ struct Shell {
     db_translator: Option<idldb::Translator>,
     config: Arc<conf::Config>,
     progress_flag: Arc<AtomicBool>,
+    history_file: Option<String>,
 }
 
 impl Shell {
 
+    /// Handle command line options, OpenSRF init, build the Shell struct.
     fn setup() -> Shell {
         let mut opts = getopts::Options::new();
 
@@ -94,6 +100,7 @@ impl Shell {
             idl,
             db: None,
             db_translator: None,
+            history_file: None,
             progress_flag: Arc::new(AtomicBool::new(false)),
         };
 
@@ -104,6 +111,7 @@ impl Shell {
         shell
     }
 
+    /// Connect directly to the specified database.
     fn setup_db(&mut self, params: &getopts::Matches) {
         let mut db = DatabaseConnection::new_from_options(&params);
 
@@ -118,29 +126,45 @@ impl Shell {
         self.db_translator = Some(translator);
     }
 
+    /// Show the progress spinner
     fn start_progress(&mut self) {
         let flag = self.progress_flag.clone();
         thread::spawn(|| SpinnerThread { stop: flag }.start());
     }
 
+    /// Hide the progress spinner
     fn stop_progress(&mut self) {
         self.progress_flag.store(true, Ordering::SeqCst);
     }
 
-    fn main_loop(&mut self) {
+    /// Setup our rustyline instance, used for reading lines (yep)
+    /// and managing history.
+    fn setup_readline(&mut self) -> rustyline::Editor<()> {
 
         let config = rustyline::Config::builder()
             .history_ignore_space(true)
-            .completion_type(rustyline::CompletionType::List)
-            .edit_mode(rustyline::EditMode::Vi)
+            .completion_type(CompletionType::List)
             .build();
 
         let mut readline = rustyline::Editor::with_config(config).unwrap();
 
+        if let Ok(home) = std::env::var("HOME") {
+            let histfile = format!("{home}/{HISTORY_FILE}");
+            readline.load_history(&histfile).ok(); // err() if not exists
+            self.history_file = Some(histfile);
+        }
+
+        readline
+    }
+
+    fn main_loop(&mut self) {
+        let mut readline = self.setup_readline();
+
         loop {
-            match self.read_one_command(&mut readline) {
+            match self.read_one_line(&mut readline) {
                 Ok(line_op) => {
                     if let Some(line) = line_op {
+                        // Add non-empty, valid command lines to the history
                         readline.add_history_entry(&line);
                     }
                 }
@@ -149,7 +173,8 @@ impl Shell {
         }
     }
 
-    fn read_one_command(&mut self, readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
+    fn read_one_line(&mut self,
+        readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
 
         let mut user_input = match readline.readline(PROMPT) {
             Ok(line) => line,
@@ -167,7 +192,10 @@ impl Shell {
         let command = parts[0].to_lowercase();
 
         match command.as_str() {
-            "stop" | "quit" | "exit" => std::process::exit(0x0),
+            "stop" | "quit" | "exit" => {
+                self.exit(readline);
+                Ok(None)
+            }
             "idl" => {
                 match self.idl_query(&parts[1..]) {
                     Ok(_) => return Ok(Some(user_input.to_string())),
@@ -176,6 +204,15 @@ impl Shell {
             }
             _ => Err(format!("Unknown command: {command}")),
         }
+    }
+
+    fn exit(&mut self, readline: &mut rustyline::Editor<()>) {
+        if let Some(filename) = self.history_file.as_ref() {
+            if let Err(e) = readline.append_history(filename) {
+                eprintln!("Cannot save history file: {e}");
+            }
+        }
+        std::process::exit(0x0);
     }
 
     fn idl_query(&mut self, parts: &[&str]) -> Result<(), String> {
