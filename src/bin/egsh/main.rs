@@ -25,9 +25,11 @@ use rustyline;
 use rustyline::Cmd;
 use rustyline::CompletionType;
 
-const PROMPT: &str = "egsh# ";
+//const PROMPT: &str = "egsh# ";
+const PROMPT: &str = "\x1b[1;32megsh# \x1b[0m";
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 const HISTORY_FILE: &str = ".egsh_history";
+const SEPARATOR: &str = "----------------------------------------------";
 
 fn main() -> Result<(), String> {
     let mut shell = Shell::setup();
@@ -40,7 +42,6 @@ struct SpinnerThread {
 }
 
 impl SpinnerThread {
-
     fn start(&mut self) {
         let mut spinner = ProgressBar::new_spinner();
 
@@ -50,7 +51,7 @@ impl SpinnerThread {
             thread::sleep(Duration::from_millis(50));
 
             if self.stop.load(Ordering::SeqCst) {
-                // Main thread said to cut it out.
+                // Main thread said to cut -> it -> out.
                 spinner.finish();
                 break;
             }
@@ -60,24 +61,51 @@ impl SpinnerThread {
     }
 }
 
+struct SpinnerThreadController {
+    progress_flag: Arc<AtomicBool>,
+}
+
+impl SpinnerThreadController {
+
+    /// Show the progress spinner
+    fn show(&mut self) {
+        let flag = self.progress_flag.clone();
+        thread::spawn(|| SpinnerThread { stop: flag }.start());
+    }
+
+    /// Hide the progress spinner
+    fn hide(&mut self) {
+        self.progress_flag.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Collection of context data, etc. for our shell.
 struct Shell {
     idl: Arc<idl::Parser>,
     db: Option<Rc<RefCell<DatabaseConnection>>>,
     db_translator: Option<idldb::Translator>,
     config: Arc<conf::Config>,
-    progress_flag: Arc<AtomicBool>,
     history_file: Option<String>,
+    spinner: SpinnerThreadController,
 }
 
 impl Shell {
 
     /// Handle command line options, OpenSRF init, build the Shell struct.
     fn setup() -> Shell {
+
+        let mut spinner = SpinnerThreadController {
+            progress_flag: Arc::new(AtomicBool::new(false)),
+        };
+
         let mut opts = getopts::Options::new();
 
         opts.optflag("", "with-database", "Open Direct Database Connection");
         opts.optopt("", "idl-file", "Path to IDL file", "IDL_PATH");
 
+        // We don't know if the user passed --with-database until after
+        // we parse the command line options.  Append the DB options
+        // in case we need them.
         DatabaseConnection::append_options(&mut opts);
 
         let conf = match osrf::init_with_options("service", &mut opts) {
@@ -88,8 +116,11 @@ impl Shell {
         let args: Vec<String> = env::args().collect();
         let params = opts.parse(&args[1..]).unwrap();
 
-        // TODO pull the IDL path from opensrf.settings.
-        let idl_file = params.opt_get_default("idl-file", DEFAULT_IDL_PATH.to_string()).unwrap();
+        // TODO pull the IDL path from opensrf.settings, while allowing
+        // for override for testing purposes.
+        let idl_file = params.opt_get_default(
+            "idl-file", DEFAULT_IDL_PATH.to_string()).unwrap();
+
         let idl = match idl::Parser::parse_file(&idl_file) {
             Ok(i) => i,
             Err(e) => panic!("Cannot parse IDL file: {} {}", e, idl_file),
@@ -98,10 +129,10 @@ impl Shell {
         let mut shell = Shell {
             config: conf.into_shared(),
             idl,
+            spinner,
             db: None,
             db_translator: None,
             history_file: None,
-            progress_flag: Arc::new(AtomicBool::new(false)),
         };
 
         if params.opt_present("with-database") {
@@ -126,17 +157,6 @@ impl Shell {
         self.db_translator = Some(translator);
     }
 
-    /// Show the progress spinner
-    fn start_progress(&mut self) {
-        let flag = self.progress_flag.clone();
-        thread::spawn(|| SpinnerThread { stop: flag }.start());
-    }
-
-    /// Hide the progress spinner
-    fn stop_progress(&mut self) {
-        self.progress_flag.store(true, Ordering::SeqCst);
-    }
-
     /// Setup our rustyline instance, used for reading lines (yep)
     /// and managing history.
     fn setup_readline(&mut self) -> rustyline::Editor<()> {
@@ -157,6 +177,7 @@ impl Shell {
         readline
     }
 
+    /// Main entry point.
     fn main_loop(&mut self) {
         let mut readline = self.setup_readline();
 
@@ -173,6 +194,7 @@ impl Shell {
         }
     }
 
+    /// Read a single line of user input and execute the command.
     fn read_one_line(&mut self,
         readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
 
@@ -206,6 +228,7 @@ impl Shell {
         }
     }
 
+    /// Save command history and exit.
     fn exit(&mut self, readline: &mut rustyline::Editor<()>) {
         if let Some(filename) = self.history_file.as_ref() {
             if let Err(e) = readline.append_history(filename) {
@@ -215,6 +238,7 @@ impl Shell {
         std::process::exit(0x0);
     }
 
+    /// Launch and IDL-based query.
     fn idl_query(&mut self, parts: &[&str]) -> Result<(), String> {
         if parts.len() < 3 {
             return Err(format!("'idl' command requires additional parameters: {parts:?}"));
@@ -226,6 +250,7 @@ impl Shell {
         }
     }
 
+    /// Retrieve a single IDL object by its primary key value
     fn idl_get(&mut self, parts: &[&str]) -> Result<(), String> {
 
         if parts.len() < 2 {
@@ -285,10 +310,21 @@ impl Shell {
         }
         fields.sort();
 
-        if let Some(org) = translator.idl_class_search(&search)?.first() {
-            for field in fields {
-                println!("{field}\t{}", org[field]);
+        let mut maxlen = 0;
+        for field in fields.iter() {
+            if field.len() > maxlen {
+                maxlen = field.len();
             }
+        };
+
+        maxlen += 3;
+
+        if let Some(org) = translator.idl_class_search(&search)?.first() {
+            println!("{SEPARATOR}");
+            for field in fields {
+                println!("{field:.<width$} {}", org[field], width = maxlen);
+            }
+            println!("{SEPARATOR}");
         }
 
         Ok(())

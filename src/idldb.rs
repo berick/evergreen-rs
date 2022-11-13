@@ -409,7 +409,15 @@ impl Translator {
                 let v: Option<String> = row.get(index);
                 Ok(json::from(v))
             }
-            "timestamp" | "timestamptz" => {
+            "date" => {
+                let v: Option<chrono::NaiveDate> = row.get(index);
+                let s = match v {
+                    Some(val) => val.format("%F").to_string(),
+                    None => return Ok(JsonValue::Null),
+                };
+                Ok(json::from(s))
+            }
+            "timestamp" | "timestamptz" | "date" => {
                 let v: Option<chrono::DateTime<Utc>> = row.get(index);
                 let s = match v {
                     Some(val) => val.format("%FT%T%z").to_string(),
@@ -444,6 +452,7 @@ impl Translator {
                     None => Ok(JsonValue::Null)
                 }
             }
+            "tsvector" => Ok(JsonValue::Null),
             _ => Err(format!("Unsupported column type: {col_type}")),
         }
     }
