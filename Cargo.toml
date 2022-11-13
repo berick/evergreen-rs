@@ -23,6 +23,7 @@ threadpool = "1.8.1"
 # for egsh
 # could be make optional
 indicatif = "0.17.2"
+rustyline = "10.0.0"
 
 # Sometimes this is just simpler than log4rs
 env_logger = "~0.9"

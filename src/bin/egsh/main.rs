@@ -19,8 +19,9 @@ use eg::idldb::IdlClassSearch;
 use eg::db::DatabaseConnection;
 use osrf::conf;
 use osrf::client::Client;
+use rustyline;
 
-const PROMPT: &str = "egsh#";
+const PROMPT: &str = "egsh# ";
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 
 fn main() -> Result<(), String> {
@@ -127,27 +128,38 @@ impl Shell {
     }
 
     fn main_loop(&mut self) {
+
+        let config = rustyline::Config::builder()
+            .history_ignore_space(true)
+            .completion_type(rustyline::CompletionType::List)
+            .edit_mode(rustyline::EditMode::Vi)
+            .build();
+
+        let mut readline = rustyline::Editor::with_config(config).unwrap();
+
         loop {
-            print!("{PROMPT} ");
-            io::stdout().flush().unwrap();
-            if let Err(e) = self.read_one_command() {
-                eprintln!("Command failed: {e}");
+            match self.read_one_command(&mut readline) {
+                Ok(line_op) => {
+                    if let Some(line) = line_op {
+                        readline.add_history_entry(&line);
+                    }
+                }
+                Err(e) => eprintln!("Command failed: {e}"),
             }
         }
     }
 
-    fn read_one_command(&mut self) -> Result<(), String> {
+    fn read_one_command(&mut self, readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
 
-        let mut user_input = String::new();
-
-        if let Err(e) = io::stdin().read_line(&mut user_input) {
-            return Err(format!("Error reading STDIN: {e}"));
-        }
+        let mut user_input = match readline.readline(PROMPT) {
+            Ok(line) => line,
+            Err(_) => return Ok(None)
+        };
 
         let user_input = user_input.trim();
 
         if user_input.len() == 0 {
-            return Ok(());
+            return Ok(None);
         }
 
         let parts: Vec<&str> = user_input.split(" ").collect();
@@ -156,7 +168,12 @@ impl Shell {
 
         match command.as_str() {
             "stop" | "quit" | "exit" => std::process::exit(0x0),
-            "idl" => self.idl_query(&parts[1..]),
+            "idl" => {
+                match self.idl_query(&parts[1..]) {
+                    Ok(_) => return Ok(Some(user_input.to_string())),
+                    Err(e) => return Err(e),
+                }
+            }
             _ => Err(format!("Unknown command: {command}")),
         }
     }
