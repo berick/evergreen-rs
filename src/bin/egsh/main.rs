@@ -322,79 +322,36 @@ impl Shell {
 
     /// Retrieve a single IDL object by its primary key value
     fn idl_get(&mut self, parts: &[&str]) -> Result<(), String> {
-
-        if parts.len() < 2 {
-            return Err(format!("'idl get' command requires additional parameters: {parts:?}"));
-        }
+        let classname = parts[0];
+        let pkey = parts[1];
 
         let mut translator = match self.db_translator.as_mut() {
             Some(t) => t,
             None => return Err(format!("Database connection required")),
         };
 
-        let idl_class = match self.idl.classes().get(parts[0]) {
-            Some(c) => c,
-            None => return Err(format!("No such IDL class: {}", parts[0])),
+        let obj = match translator.idl_class_by_pkey(classname, pkey)? {
+            Some(o) => o,
+            None => return Ok(())
         };
 
-        let pkey_field = match idl_class.pkey() {
-            Some(f) => f,
-            None => {
-                return Err(format!(
-                    "IDL class {} has no pkey value and cannot be queried",
-                    idl_class.classname()
-                ));
-            }
-        };
+        // By now, we know the classname is valid.
+        let idl_class = self.idl.classes().get(classname).unwrap();
+        let fields = idl_class.real_fields_sorted();
 
-        let idl_field = match idl_class.fields().get(pkey_field) {
-            Some(f) => f,
-            None => return Err(format!(
-                "Field {pkey_field} is listed as pkey, but is not listed as a field"))
-        };
-
-        let pkey_arg = parts[1];
-        let mut filter = JsonValue::new_object();
-
-        if idl_field.datatype().is_numeric() {
-            let num = match pkey_arg.parse::<f64>() {
-                Ok(n) => n,
-                Err(e) => return Err(format!(
-                    "Pkey is numeric, but filter value provided is not: {pkey_arg:?}"))
-            };
-
-            filter.insert(&pkey_field, json::from(num)).unwrap();
-        } else {
-
-            filter.insert(&pkey_field, json::from(pkey_arg)).unwrap();
-        }
-
-        let mut search = IdlClassSearch::new(parts[0]);
-        search.set_filter(filter);
-
-        let mut fields: Vec<&String> = Vec::new();
-        for (name, field) in idl_class.fields().into_iter() {
-            if !field.is_virtual() {
-                fields.push(name);
-            }
-        }
-        fields.sort();
-
+        // Get the max field name length for improved formatting.
         let mut maxlen = 0;
         for field in fields.iter() {
-            if field.len() > maxlen {
-                maxlen = field.len();
+            if field.name().len() > maxlen {
+                maxlen = field.name().len();
             }
         };
-
         maxlen += 3;
 
-        if let Some(org) = translator.idl_class_search(&search)?.first() {
-            println!("{SEPARATOR}");
-            for field in fields {
-                println!("{field:.<width$} {}", org[field], width = maxlen);
-            }
-            println!("{SEPARATOR}");
+        for field in idl_class.real_fields_sorted() {
+            let name = field.name();
+            let value = &obj[name];
+            println!("{name:.<width$} {value}", width = maxlen);
         }
 
         Ok(())

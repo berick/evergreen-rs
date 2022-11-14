@@ -210,6 +210,23 @@ impl Class {
     pub fn tablename(&self) -> Option<&str> {
         self.tablename.as_deref()
     }
+
+    pub fn real_fields(&self) -> Vec<&Field> {
+        let mut fields: Vec<&Field> = Vec::new();
+        for (name, field) in self.fields().into_iter() {
+            if !field.is_virtual() {
+                fields.push(field);
+            }
+        }
+        fields
+    }
+
+    /// Vec of field sorted by name.
+    pub fn real_fields_sorted(&self) -> Vec<&Field> {
+        let mut fields = self.real_fields();
+        fields.sort_by(|a, b| a.name().cmp(b.name()));
+        fields
+    }
 }
 
 impl fmt::Display for Class {
