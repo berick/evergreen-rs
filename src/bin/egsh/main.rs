@@ -212,6 +212,12 @@ impl Shell {
 
     fn process_script_lines(&mut self) -> Result<(), String> {
 
+        // Avoid mucking with STDIN if we have no piped data to process.
+        // Otherwise, it conflict with rustlyine.
+        if atty::is(atty::Stream::Stdin) {
+            return Ok(());
+        }
+
         let mut buffer = String::new();
         let mut stdin = io::stdin();
 
@@ -241,17 +247,18 @@ impl Shell {
             }
         }
 
-        if !atty::is(atty::Stream::Stdin) {
-            // If we started on the receiving end of a pipe, exit after
-            // all piped data has been processed, even if no usable
-            // data was found.
-            self.exit();
-        }
+        // If we started on the receiving end of a pipe, exit after
+        // all piped data has been processed, even if no usable
+        // data was found.
+        self.exit();
 
         Ok(())
     }
 
     /// Read a single line of user input and execute the command.
+    ///
+    /// If the command was successfully executed, return the command
+    /// as a string so it may be added to our history.
     fn read_one_line(&mut self,
         readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
 
@@ -269,10 +276,8 @@ impl Shell {
         self.dispatch_command(&user_input)
     }
 
-    fn dispatch_command(
-        &mut self,
-        line: &str
-    ) -> Result<Option<String>, String> {
+    /// Route a command line to its handler.
+    fn dispatch_command(&mut self, line: &str) -> Result<Option<String>, String> {
         let args: Vec<&str> = line.split(" ").collect();
 
         let command = args[0].to_lowercase();
@@ -283,7 +288,7 @@ impl Shell {
                 Ok(None)
             }
             "idl" => {
-                match self.idl_query(&args[1..]) {
+                match self.idl_query(&args[..]) {
                     Ok(_) => return Ok(Some(line.to_string())),
                     Err(e) => return Err(e),
                 }
@@ -292,18 +297,25 @@ impl Shell {
         }
     }
 
+    /// Returns Err if the str slice does not contain enough entries.
+    fn check_command_length(&self, args: &[&str], len: usize) -> Result<(), String> {
+        if args.len() < len {
+            Err(format!("Command is incomplete: {args:?}"))
+        } else {
+            Ok(())
+        }
+    }
+
     fn exit(&mut self) {
         std::process::exit(0x0);
     }
 
-    /// Launch and IDL-based query.
+    /// Launch an IDL query.
     fn idl_query(&mut self, parts: &[&str]) -> Result<(), String> {
-        if parts.len() < 3 {
-            return Err(format!("'idl' command requires additional parameters: {parts:?}"));
-        }
+        self.check_command_length(&parts[..], 4)?;
 
-        match parts[0] {
-            "get" => self.idl_get(&parts[1..]),
+        match parts[1] {
+            "get" => self.idl_get(&parts[2..]),
             _ => return Err(format!("Could not parse idl query command: {parts:?}")),
         }
     }
