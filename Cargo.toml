@@ -24,6 +24,7 @@ threadpool = "1.8.1"
 # could be make optional
 indicatif = "0.17.2"
 rustyline = "10.0.0"
+atty = "0.2.14"
 
 # Sometimes this is just simpler than log4rs
 env_logger = "~0.9"

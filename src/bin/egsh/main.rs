@@ -179,19 +179,76 @@ impl Shell {
 
     /// Main entry point.
     fn main_loop(&mut self) {
+
+        if let Err(e) = self.process_script_lines() {
+            eprintln!("{e}");
+            return;
+        }
+
         let mut readline = self.setup_readline();
 
         loop {
             match self.read_one_line(&mut readline) {
                 Ok(line_op) => {
                     if let Some(line) = line_op {
-                        // Add non-empty, valid command lines to the history
-                        readline.add_history_entry(&line);
+                        self.add_to_history(&mut readline, &line);
                     }
                 }
                 Err(e) => eprintln!("Command failed: {e}"),
             }
         }
+    }
+
+    fn add_to_history(&self, readline: &mut rustyline::Editor<()>, line: &str) {
+
+        readline.add_history_entry(line);
+
+        if let Some(filename) = self.history_file.as_ref() {
+            if let Err(e) = readline.append_history(filename) {
+                eprintln!("Cannot append to history file: {e}");
+            }
+        }
+    }
+
+    fn process_script_lines(&mut self) -> Result<(), String> {
+
+        let mut buffer = String::new();
+        let mut stdin = io::stdin();
+
+        loop {
+            buffer.clear();
+            match stdin.read_line(&mut buffer) {
+                Ok(count) => {
+
+                    if count == 0 {
+                        break; // EOF
+                    }
+
+                    let command = buffer.trim();
+
+                    if command.len() == 0 {
+                        // Empty line, but maybe still more data to process.
+                        continue;
+                    }
+
+                    if let Err(e) = self.dispatch_command(&command) {
+                        eprintln!("Error processing piped requests: {e}");
+                        break;
+                    }
+                }
+
+                Err(e) => return Err(format!("Error reading stdin: {e}"))
+            }
+        }
+
+        if !atty::is(atty::Stream::Stdin) {
+            // If we started on the receiving end of a pipe, exit after
+            // all piped data has been processed, even if no usable
+            // data was found.
+            self.exit();
+        }
+
+        Ok(())
     }
 
     /// Read a single line of user input and execute the command.
@@ -209,22 +266,20 @@ impl Shell {
             return Ok(None);
         }
 
-        self.dispatch_command(readline, &user_input)
+        self.dispatch_command(&user_input)
     }
 
     fn dispatch_command(
         &mut self,
-        readline: &mut rustyline::Editor<()>,
         line: &str
     ) -> Result<Option<String>, String> {
-
         let args: Vec<&str> = line.split(" ").collect();
 
         let command = args[0].to_lowercase();
 
         match command.as_str() {
             "stop" | "quit" | "exit" => {
-                self.exit(readline);
+                self.exit();
                 Ok(None)
             }
             "idl" => {
@@ -237,13 +292,7 @@ impl Shell {
         }
     }
 
-    /// Save command history and exit.
-    fn exit(&mut self, readline: &mut rustyline::Editor<()>) {
-        if let Some(filename) = self.history_file.as_ref() {
-            if let Err(e) = readline.append_history(filename) {
-                eprintln!("Cannot save history file: {e}");
-            }
-        }
+    fn exit(&mut self) {
         std::process::exit(0x0);
     }
 
