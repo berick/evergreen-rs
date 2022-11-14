@@ -1,29 +1,24 @@
 use std::env;
 use std::io;
-use std::path;
-use std::fs;
-use std::io::Write;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-use json::JsonValue;
+
+use rustyline;
+use rustyline::CompletionType;
 use getopts;
 use indicatif::ProgressBar;
+
 use opensrf as osrf;
 use evergreen as eg;
 use eg::idl;
-use eg::idl::DataType;
 use eg::idldb;
-use eg::idldb::IdlClassSearch;
 use eg::db::DatabaseConnection;
 use osrf::conf;
 use osrf::client::Client;
-use rustyline;
-use rustyline::Cmd;
-use rustyline::CompletionType;
 
 //const PROMPT: &str = "egsh# ";
 const PROMPT: &str = "\x1b[1;32megsh# \x1b[0m";
@@ -43,7 +38,7 @@ struct SpinnerThread {
 
 impl SpinnerThread {
     fn start(&mut self) {
-        let mut spinner = ProgressBar::new_spinner();
+        let spinner = ProgressBar::new_spinner();
 
         loop {
             // Start with the sleep so the spinner only appears if the
@@ -63,6 +58,7 @@ impl SpinnerThread {
 
 struct SpinnerThreadController {
     progress_flag: Arc<AtomicBool>,
+    join_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl SpinnerThreadController {
@@ -70,12 +66,17 @@ impl SpinnerThreadController {
     /// Show the progress spinner
     fn show(&mut self) {
         let flag = self.progress_flag.clone();
-        thread::spawn(|| SpinnerThread { stop: flag }.start());
+        self.join_handle = Some(
+            thread::spawn(|| SpinnerThread { stop: flag }.start())
+        );
     }
 
     /// Hide the progress spinner
     fn hide(&mut self) {
         self.progress_flag.store(true, Ordering::SeqCst);
+        if let Some(h) = self.join_handle.take() {
+            h.join().ok();
+        }
     }
 }
 
@@ -94,8 +95,9 @@ impl Shell {
     /// Handle command line options, OpenSRF init, build the Shell struct.
     fn setup() -> Shell {
 
-        let mut spinner = SpinnerThreadController {
+        let spinner = SpinnerThreadController {
             progress_flag: Arc::new(AtomicBool::new(false)),
+            join_handle: None,
         };
 
         let mut opts = getopts::Options::new();
@@ -190,12 +192,14 @@ impl Shell {
         loop {
             match self.read_one_line(&mut readline) {
                 Ok(line_op) => {
+                    self.spinner.show();
                     if let Some(line) = line_op {
                         self.add_to_history(&mut readline, &line);
                     }
                 }
                 Err(e) => eprintln!("Command failed: {e}"),
             }
+            self.spinner.hide();
         }
     }
 
@@ -219,7 +223,7 @@ impl Shell {
         }
 
         let mut buffer = String::new();
-        let mut stdin = io::stdin();
+        let stdin = io::stdin();
 
         loop {
             buffer.clear();
@@ -262,7 +266,7 @@ impl Shell {
     fn read_one_line(&mut self,
         readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
 
-        let mut user_input = match readline.readline(PROMPT) {
+        let user_input = match readline.readline(PROMPT) {
             Ok(line) => line,
             Err(_) => return Ok(None)
         };
@@ -293,8 +297,49 @@ impl Shell {
                     Err(e) => return Err(e),
                 }
             }
+            "db" => {
+                match self.db_command(&args[..]) {
+                    Ok(_) => return Ok(Some(line.to_string())),
+                    Err(e) => return Err(e),
+                }
+            }
             _ => Err(format!("Unknown command: {command}")),
         }
+    }
+
+    fn db_command(&mut self, args: &[&str]) -> Result<String, String> {
+        self.check_command_length(args, 3)?;
+
+        match args[1].to_lowercase().as_str() {
+            "sleep" => match self.db_sleep(args[2]) {
+                Ok(()) => Ok(format!("{}", args.join(" "))),
+                Err(e) => Err(format!("'db' command failed: {e}"))
+            }
+            _ => Err(format!("Unknown 'db' command: {args:?}"))
+        }
+    }
+
+    fn db_sleep(&mut self, secs: &str) -> Result<(), String> {
+
+        let secs: f64 = match secs.parse::<f64>() {
+            Ok(s) => s,
+            Err(_) => return Err(format!("Invalid sleep duration: {secs}")),
+        };
+
+        let db = match &mut self.db {
+            Some(d) => d,
+            None => return Err(format!("'db' command requires database connection"))
+        };
+
+        let query = "SELECT PG_SLEEP($1)";
+
+        let query_res = db.borrow_mut().client().query(&query[..], &[&secs]);
+
+        if let Err(e) = query_res {
+            return Err(format!("DB query failed: {e}"));
+        }
+
+        Ok(())
     }
 
     /// Returns Err if the str slice does not contain enough entries.
@@ -325,7 +370,7 @@ impl Shell {
         let classname = parts[0];
         let pkey = parts[1];
 
-        let mut translator = match self.db_translator.as_mut() {
+        let translator = match self.db_translator.as_mut() {
             Some(t) => t,
             None => return Err(format!("Database connection required")),
         };
@@ -353,6 +398,8 @@ impl Shell {
             let value = &obj[name];
             println!("{name:.<width$} {value}", width = maxlen);
         }
+
+        println!("{SEPARATOR}");
 
         Ok(())
     }
