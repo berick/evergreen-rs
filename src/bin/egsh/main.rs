@@ -209,9 +209,18 @@ impl Shell {
             return Ok(None);
         }
 
-        let parts: Vec<&str> = user_input.split(" ").collect();
+        self.dispatch_command(readline, &user_input)
+    }
 
-        let command = parts[0].to_lowercase();
+    fn dispatch_command(
+        &mut self,
+        readline: &mut rustyline::Editor<()>,
+        line: &str
+    ) -> Result<Option<String>, String> {
+
+        let args: Vec<&str> = line.split(" ").collect();
+
+        let command = args[0].to_lowercase();
 
         match command.as_str() {
             "stop" | "quit" | "exit" => {
@@ -219,8 +228,8 @@ impl Shell {
                 Ok(None)
             }
             "idl" => {
-                match self.idl_query(&parts[1..]) {
-                    Ok(_) => return Ok(Some(user_input.to_string())),
+                match self.idl_query(&args[1..]) {
+                    Ok(_) => return Ok(Some(line.to_string())),
                     Err(e) => return Err(e),
                 }
             }
