@@ -26,6 +26,31 @@ const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 const HISTORY_FILE: &str = ".egsh_history";
 const SEPARATOR: &str = "----------------------------------------------";
 
+const HELP_TEXT: &str = r#"
+Options
+
+  * Standard OpenSRF Options
+    --localhost
+    --domain
+    --osrf-config
+
+  * Additional Options
+    --with-database
+      * Connect directly to an Evergreen database.
+
+Commands
+
+  idl get <classname> <pkey-value>
+    * Retrieve and IDL-classed object by primary key.
+
+  db sleep <seconds>
+    * Run PG_SLEEP(<seconds>).  Mostly for debugging.
+
+  help
+
+"#;
+
+
 fn main() -> Result<(), String> {
     let mut shell = Shell::setup();
     shell.main_loop();
@@ -77,6 +102,7 @@ impl SpinnerThreadController {
         if let Some(h) = self.join_handle.take() {
             h.join().ok();
         }
+        self.progress_flag.store(false, Ordering::SeqCst);
     }
 }
 
@@ -192,7 +218,6 @@ impl Shell {
         loop {
             match self.read_one_line(&mut readline) {
                 Ok(line_op) => {
-                    self.spinner.show();
                     if let Some(line) = line_op {
                         self.add_to_history(&mut readline, &line);
                     }
@@ -271,6 +296,8 @@ impl Shell {
             Err(_) => return Ok(None)
         };
 
+        self.spinner.show();
+
         let user_input = user_input.trim();
 
         if user_input.len() == 0 {
@@ -302,6 +329,10 @@ impl Shell {
                     Ok(_) => return Ok(Some(line.to_string())),
                     Err(e) => return Err(e),
                 }
+            }
+            "help" => {
+                println!("{HELP_TEXT}");
+                Ok(Some(command))
             }
             _ => Err(format!("Unknown command: {command}")),
         }
@@ -380,8 +411,23 @@ impl Shell {
             None => return Ok(())
         };
 
-        // By now, we know the classname is valid.
-        let idl_class = self.idl.classes().get(classname).unwrap();
+        self.print_idl_object(&obj)
+    }
+
+    fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {
+
+        let classname = match obj[idl::CLASSNAME_KEY].as_str() {
+            Some(c) => c,
+            None => return Err(format!(
+                "Not a valid IDL object value: {}", obj.dump())),
+        };
+
+        let idl_class = match self.idl.classes().get(classname) {
+            Some(c) => c,
+            None => return Err(format!(
+                "Object has an invalid class name {classname}")),
+        };
+
         let fields = idl_class.real_fields_sorted();
 
         // Get the max field name length for improved formatting.

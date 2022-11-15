@@ -10,7 +10,6 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 use chrono::prelude::*;
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, PartialEq)]

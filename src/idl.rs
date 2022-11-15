@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::sync::Arc;
+use std::ops::Index;
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
@@ -211,6 +212,7 @@ impl Class {
         self.tablename.as_deref()
     }
 
+    /// Vec of non-virutal fields.
     pub fn real_fields(&self) -> Vec<&Field> {
         let mut fields: Vec<&Field> = Vec::new();
         for (name, field) in self.fields().into_iter() {
@@ -221,7 +223,7 @@ impl Class {
         fields
     }
 
-    /// Vec of field sorted by name.
+    /// Vec of non-virutal fields sorted by name.
     pub fn real_fields_sorted(&self) -> Vec<&Field> {
         let mut fields = self.real_fields();
         fields.sort_by(|a, b| a.name().cmp(b.name()));
@@ -239,6 +241,46 @@ impl fmt::Display for Class {
             self.links.len(),
             self.label
         )
+    }
+}
+
+/// NOTE: experiment
+/// Create an Instance wrapper around a JsonValue to enforce
+/// IDL field access (and maybe more, we'll see).
+pub fn wrap(idl: Arc<Parser>, v: json::JsonValue) -> Result<Instance, String> {
+    let classname = match v[CLASSNAME_KEY].as_str() {
+        Some(c) => c.to_string(),
+        None => return Err(
+            format!("JsonValue cannot be blessed into an idl::Instance")),
+    };
+
+    Ok(Instance { classname, idl, value: v })
+}
+
+pub struct Instance {
+    classname: String,
+    value: json::JsonValue,
+    idl: Arc<Parser>,
+}
+
+impl Instance {
+    pub fn inner(&self) -> &json::JsonValue {
+        &self.value
+    }
+    pub fn classname(&self) -> &str {
+        &self.classname
+    }
+}
+
+impl Index<&str> for Instance {
+    type Output = json::JsonValue;
+    fn index(&self, key: &str) -> &Self::Output {
+        if let Some(field) =
+            self.idl.classes().get(&self.classname).unwrap().fields().get(key) {
+            &self.value[key]
+        } else {
+            panic!("IDL class {} has no field {key}", self.classname);
+        }
     }
 }
 
@@ -468,7 +510,7 @@ impl Parser {
         class.links.insert(link.field.to_string(), link);
     }
 
-    /// Converts and IDL-classed array into a hash whose keys match
+    /// Converts an IDL-classed array into a hash whose keys match
     /// the values defined in the IDL for this class.
     ///
     /// Includes a _classname key with the IDL class.
@@ -506,6 +548,7 @@ impl Parser {
 }
 
 impl DataSerializer for Parser {
+
     /// Creates a clone of the provided JsonValue, replacing any
     /// IDL-classed arrays with classed hashes.
     fn unpack(&self, value: &json::JsonValue) -> json::JsonValue {
