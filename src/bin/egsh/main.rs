@@ -25,6 +25,8 @@ const PROMPT: &str = "\x1b[1;32megsh# \x1b[0m";
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 const HISTORY_FILE: &str = ".egsh_history";
 const SEPARATOR: &str = "----------------------------------------------";
+const DEFAULT_REQUEST_TIMEOUT: i32 = 120;
+const DEFAULT_JSON_PRINT_DEPTH: u16 = 2;
 
 const HELP_TEXT: &str = r#"
 Options
@@ -41,10 +43,19 @@ Options
 Commands
 
   idl get <classname> <pkey-value>
-    * Retrieve and IDL-classed object by primary key.
+    Retrieve and IDL-classed object by primary key.
 
   db sleep <seconds>
-    * Run PG_SLEEP(<seconds>).  Mostly for debugging.
+    Runs PG_SLEEP(<seconds>).  Mostly for debugging.
+
+  router <node_name> <command> [<router_class>]
+    Sends <command> to the router at <node_name> and reports the result.
+    Specify "_" as the <node_name> to send the request to the router
+    on the same node as the primary connection node for egsh.
+
+  req     <service> <api_name> [<param>, <param>, ...]
+  request <service> <api_name> [<param>, <param>, ...]
+    Send an API request.
 
   help
 
@@ -84,12 +95,14 @@ impl SpinnerThread {
 struct SpinnerThreadController {
     progress_flag: Arc<AtomicBool>,
     join_handle: Option<thread::JoinHandle<()>>,
+    active: bool,
 }
 
 impl SpinnerThreadController {
 
     /// Show the progress spinner
     fn show(&mut self) {
+        self.active = true;
         let flag = self.progress_flag.clone();
         self.join_handle = Some(
             thread::spawn(|| SpinnerThread { stop: flag }.start())
@@ -98,11 +111,14 @@ impl SpinnerThreadController {
 
     /// Hide the progress spinner
     fn hide(&mut self) {
+        if !self.active { return; }
+
         self.progress_flag.store(true, Ordering::SeqCst);
         if let Some(h) = self.join_handle.take() {
             h.join().ok();
         }
         self.progress_flag.store(false, Ordering::SeqCst);
+        self.active = false;
     }
 }
 
@@ -111,9 +127,11 @@ struct Shell {
     idl: Arc<idl::Parser>,
     db: Option<Rc<RefCell<DatabaseConnection>>>,
     db_translator: Option<idldb::Translator>,
+    client: Client,
     config: Arc<conf::Config>,
     history_file: Option<String>,
     spinner: SpinnerThreadController,
+    json_print_depth: u16,
 }
 
 impl Shell {
@@ -124,6 +142,7 @@ impl Shell {
         let spinner = SpinnerThreadController {
             progress_flag: Arc::new(AtomicBool::new(false)),
             join_handle: None,
+            active: false
         };
 
         let mut opts = getopts::Options::new();
@@ -141,6 +160,8 @@ impl Shell {
             Err(e) => panic!("Cannot init to OpenSRF: {}", e),
         };
 
+        let conf = conf.into_shared();
+
         let args: Vec<String> = env::args().collect();
         let params = opts.parse(&args[1..]).unwrap();
 
@@ -154,13 +175,22 @@ impl Shell {
             Err(e) => panic!("Cannot parse IDL file: {} {}", e, idl_file),
         };
 
+        let client = match Client::connect(conf.clone()) {
+            Ok(c) => c,
+            Err(e) => panic!("Cannot connect to OpenSRF: {}", e),
+        };
+
+        client.set_serializer(idl::Parser::as_serializer(&idl));
+
         let mut shell = Shell {
-            config: conf.into_shared(),
+            config: conf,
+            client,
             idl,
             spinner,
             db: None,
             db_translator: None,
             history_file: None,
+            json_print_depth: DEFAULT_JSON_PRINT_DEPTH,
         };
 
         if params.opt_present("with-database") {
@@ -216,13 +246,8 @@ impl Shell {
         let mut readline = self.setup_readline();
 
         loop {
-            match self.read_one_line(&mut readline) {
-                Ok(line_op) => {
-                    if let Some(line) = line_op {
-                        self.add_to_history(&mut readline, &line);
-                    }
-                }
-                Err(e) => eprintln!("Command failed: {e}"),
+            if let Err(e) = self.read_one_line(&mut readline) {
+                eprintln!("Command failed: {e}");
             }
             self.spinner.hide();
         }
@@ -289,11 +314,11 @@ impl Shell {
     /// If the command was successfully executed, return the command
     /// as a string so it may be added to our history.
     fn read_one_line(&mut self,
-        readline: &mut rustyline::Editor<()>) -> Result<Option<String>, String> {
+        readline: &mut rustyline::Editor<()>) -> Result<(), String> {
 
         let user_input = match readline.readline(PROMPT) {
             Ok(line) => line,
-            Err(_) => return Ok(None)
+            Err(_) => return Ok(()),
         };
 
         self.spinner.show();
@@ -301,14 +326,17 @@ impl Shell {
         let user_input = user_input.trim();
 
         if user_input.len() == 0 {
-            return Ok(None);
+            return Ok(());
         }
 
-        self.dispatch_command(&user_input)
+        self.dispatch_command(&user_input)?;
+        self.add_to_history(readline, &user_input);
+
+        Ok(())
     }
 
     /// Route a command line to its handler.
-    fn dispatch_command(&mut self, line: &str) -> Result<Option<String>, String> {
+    fn dispatch_command(&mut self, line: &str) -> Result<(), String> {
         let args: Vec<&str> = line.split(" ").collect();
 
         let command = args[0].to_lowercase();
@@ -316,36 +344,84 @@ impl Shell {
         match command.as_str() {
             "stop" | "quit" | "exit" => {
                 self.exit();
-                Ok(None)
+                Ok(())
             }
             "idl" => {
-                match self.idl_query(&args[..]) {
-                    Ok(_) => return Ok(Some(line.to_string())),
-                    Err(e) => return Err(e),
-                }
+                self.idl_query(&args[..])
             }
             "db" => {
-                match self.db_command(&args[..]) {
-                    Ok(_) => return Ok(Some(line.to_string())),
-                    Err(e) => return Err(e),
-                }
+                self.db_command(&args[..])
+            }
+            "req" | "request" => {
+                self.send_request(&args[..])
+            }
+            "router" => {
+                self.send_router_command(&args[..])
             }
             "help" => {
                 println!("{HELP_TEXT}");
-                Ok(Some(command))
+                Ok(())
             }
             _ => Err(format!("Unknown command: {command}")),
         }
     }
 
-    fn db_command(&mut self, args: &[&str]) -> Result<String, String> {
+    fn send_router_command(&mut self, args: &[&str]) -> Result<(), String> {
+        self.check_command_length(args, 3)?;
+
+        let mut node_name = args[1];
+        let command = args[2];
+
+        if node_name.eq("_") {
+            let pc = self.config.primary_connection().unwrap();
+            node_name = pc.node_name();
+        }
+
+        let router_class = match args.len() > 3 {
+            true => Some(args[3]),
+            false => None
+        };
+
+        // Assumes the caller wants to see the response for any
+        // router request.
+        if let Some(resp) =
+            self.client.send_router_command(node_name, command, router_class, true)? {
+            self.print_json_record(&resp);
+        }
+
+        Ok(())
+    }
+
+    fn send_request(&mut self, args: &[&str]) -> Result<(), String> {
+        self.check_command_length(args, 3)?;
+
+        let mut params: Vec<json::JsonValue> = Vec::new();
+
+        let mut idx = 3;
+        while idx < args.len() {
+            let p = match json::parse(args[idx]) {
+                Ok(p) => p,
+                Err(e) => return Err(
+                    format!("Cannot parse parameter: {} {}", args[idx], e)),
+            };
+            params.push(p);
+            idx += 1;
+        }
+
+        let mut ses = self.client.session(args[1]);
+        let mut req = ses.request(args[2], &params)?;
+        while let Some(resp) = req.recv(DEFAULT_REQUEST_TIMEOUT)? {
+            self.print_json_record(&resp);
+        }
+
+        Ok(())
+    }
+
+    fn db_command(&mut self, args: &[&str]) -> Result<(), String> {
         self.check_command_length(args, 3)?;
 
         match args[1].to_lowercase().as_str() {
-            "sleep" => match self.db_sleep(args[2]) {
-                Ok(()) => Ok(format!("{}", args.join(" "))),
-                Err(e) => Err(format!("'db' command failed: {e}"))
-            }
+            "sleep" => self.db_sleep(args[2]),
             _ => Err(format!("Unknown 'db' command: {args:?}"))
         }
     }
@@ -411,7 +487,13 @@ impl Shell {
             None => return Ok(())
         };
 
-        self.print_idl_object(&obj)
+        self.print_json_record(&obj);
+        Ok(())
+    }
+
+    fn print_json_record(&self, obj: &json::JsonValue) {
+        println!("{}", obj.pretty(self.json_print_depth));
+        println!("{SEPARATOR}");
     }
 
     fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {

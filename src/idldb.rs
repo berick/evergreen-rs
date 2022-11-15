@@ -166,7 +166,7 @@ impl Translator {
         if idl_field.datatype().is_numeric() {
             let num = match pkey.parse::<f64>() {
                 Ok(n) => n,
-                Err(e) => return Err(format!(
+                Err(_) => return Err(format!(
                     "Pkey is numeric, but filter value provided is not: {pkey:?}"))
             };
 
