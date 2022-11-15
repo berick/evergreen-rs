@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Instant, Duration};
 
 use rustyline;
 use rustyline::CompletionType;
@@ -24,7 +24,7 @@ use osrf::client::Client;
 const PROMPT: &str = "\x1b[1;32megsh# \x1b[0m";
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 const HISTORY_FILE: &str = ".egsh_history";
-const SEPARATOR: &str = "----------------------------------------------";
+const SEPARATOR: &str = "---------------------------------------------------";
 const DEFAULT_REQUEST_TIMEOUT: i32 = 120;
 const DEFAULT_JSON_PRINT_DEPTH: u16 = 2;
 
@@ -321,6 +321,8 @@ impl Shell {
             Err(_) => return Ok(()),
         };
 
+        let now = Instant::now();
+
         self.spinner.show();
 
         let user_input = user_input.trim();
@@ -330,9 +332,15 @@ impl Shell {
         }
 
         self.dispatch_command(&user_input)?;
+        self.print_duration(&now);
         self.add_to_history(readline, &user_input);
 
         Ok(())
+    }
+
+    fn print_duration(&self, now: &Instant) {
+        println!("Duration: {}", now.elapsed().as_secs_f32());
+        println!("{SEPARATOR}");
     }
 
     /// Route a command line to its handler.
