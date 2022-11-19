@@ -4,7 +4,7 @@ use opensrf as osrf;
 use osrf::Client;
 
 fn main() -> Result<(), String> {
-    let conf = osrf::init("service")?;
+    let conf = osrf::init()?;
 
     println!("Parsing IDL");
     let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;

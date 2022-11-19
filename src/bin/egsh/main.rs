@@ -48,9 +48,9 @@ Commands
   db sleep <seconds>
     Runs PG_SLEEP(<seconds>).  Mostly for debugging.
 
-  router <node_name> <command> [<router_class>]
-    Sends <command> to the router at <node_name> and reports the result.
-    Specify "_" as the <node_name> to send the request to the router
+  router <domain> <command> [<router_class>]
+    Sends <command> to the router at <domain> and reports the result.
+    Specify "_" as the <domain> to send the request to the router
     on the same node as the primary connection node for egsh.
 
   req     <service> <api_name> [<param>, <param>, ...]
@@ -155,7 +155,9 @@ impl Shell {
         // in case we need them.
         DatabaseConnection::append_options(&mut opts);
 
-        let conf = match osrf::init_with_options("service", &mut opts) {
+        // TODO make initoptions better
+        let init_ops = osrf::InitOptions { skip_logging: false };
+        let conf = match osrf::init_with_options(&init_ops, &mut opts) {
             Ok((c, _)) => c,
             Err(e) => panic!("Cannot init to OpenSRF: {}", e),
         };
@@ -377,12 +379,11 @@ impl Shell {
     fn send_router_command(&mut self, args: &[&str]) -> Result<(), String> {
         self.check_command_length(args, 3)?;
 
-        let mut node_name = args[1];
+        let mut domain = args[1];
         let command = args[2];
 
-        if node_name.eq("_") {
-            let pc = self.config.primary_connection().unwrap();
-            node_name = pc.node_name();
+        if domain.eq("_") {
+            domain = self.config.client().domain().name();
         }
 
         let router_class = match args.len() > 3 {
@@ -393,7 +394,7 @@ impl Shell {
         // Assumes the caller wants to see the response for any
         // router request.
         if let Some(resp) =
-            self.client.send_router_command(node_name, command, router_class, true)? {
+            self.client.send_router_command(domain, command, router_class, true)? {
             self.print_json_record(&resp);
         }
 

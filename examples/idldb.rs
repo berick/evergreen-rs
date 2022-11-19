@@ -8,7 +8,10 @@ use std::env;
 
 fn main() -> Result<(), String> {
     let mut opts = getopts::Options::new();
-    let (mut conf, _) = osrf::init_with_options("service", &mut opts)?;
+
+    // TODO make ops simpler
+    let init_ops = osrf::InitOptions { skip_logging: false };
+    let (mut conf, _) = osrf::init_with_options(&init_ops, &mut opts)?;
 
     let args: Vec<String> = env::args().collect();
 
