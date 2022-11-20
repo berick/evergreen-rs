@@ -100,7 +100,11 @@ pub struct AuthSession {
 }
 
 impl AuthSession {
-    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<AuthSession, String> {
+
+    /// Login and acquire an authtoken.
+    ///
+    /// Returns None on login failure, Err on error.
+    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<Option<AuthSession>, String> {
         let params = vec![args.to_json_value()];
         let mut ses = client.session("open-ils.auth");
         let mut req = ses.request("open-ils.auth.login", params)?;
@@ -120,7 +124,8 @@ impl AuthSession {
         };
 
         if !evt.success() {
-            return Err(format!("Non-success event returned"));
+            log::warn!("Login failed");
+            return Ok(None);
         }
 
         if !evt.payload().is_object() {
@@ -151,7 +156,7 @@ impl AuthSession {
             auth_ses.workstation = Some(String::from(w));
         }
 
-        Ok(auth_ses)
+        Ok(Some(auth_ses))
     }
 
     pub fn token(&self) -> &str {

@@ -17,7 +17,11 @@ fn main() -> Result<(), String> {
     println!("Logging in...");
 
     let args = eg::auth::AuthLoginArgs::new("admin", "demo123", "temp", None);
-    let auth_ses = eg::auth::AuthSession::login(&mut client, &args)?;
+    let auth_ses = match eg::auth::AuthSession::login(&mut client, &args)? {
+        Some(s) => s,
+        None => panic!("Login failed"),
+    };
+
     let token = auth_ses.token();
 
     println!("Logged in and got authtoken: {}", token);

@@ -215,7 +215,7 @@ impl Class {
     /// Vec of non-virutal fields.
     pub fn real_fields(&self) -> Vec<&Field> {
         let mut fields: Vec<&Field> = Vec::new();
-        for (name, field) in self.fields().into_iter() {
+        for (_, field) in self.fields().into_iter() {
             if !field.is_virtual() {
                 fields.push(field);
             }
@@ -275,7 +275,7 @@ impl Instance {
 impl Index<&str> for Instance {
     type Output = json::JsonValue;
     fn index(&self, key: &str) -> &Self::Output {
-        if let Some(field) =
+        if let Some(_) =
             self.idl.classes().get(&self.classname).unwrap().fields().get(key) {
             &self.value[key]
         } else {

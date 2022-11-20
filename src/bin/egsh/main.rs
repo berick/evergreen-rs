@@ -16,6 +16,7 @@ use opensrf as osrf;
 use evergreen as eg;
 use eg::idl;
 use eg::idldb;
+use eg::auth::AuthSession;
 use eg::db::DatabaseConnection;
 use osrf::conf;
 use osrf::client::Client;
@@ -57,6 +58,10 @@ Commands
   request <service> <api_name> [<param>, <param>, ...]
     Send an API request.
 
+  reqauth <service> <api_name> [<param>, <param>, ...]
+    Same as 'req', but the first parameter sent to the server
+    is always our authtoken.
+
   help
 
 "#;
@@ -74,20 +79,28 @@ struct SpinnerThread {
 
 impl SpinnerThread {
     fn start(&mut self) {
-        let spinner = ProgressBar::new_spinner();
+        let mut spinner: Option<ProgressBar> = None;
 
         loop {
             // Start with the sleep so the spinner only appears if the
-            // request is actually taking enough time for a human to notice.
-            thread::sleep(Duration::from_millis(50));
+            // request is taking enough time for a human to notice.
+            thread::sleep(Duration::from_millis(200));
 
             if self.stop.load(Ordering::SeqCst) {
                 // Main thread said to cut -> it -> out.
-                spinner.finish();
+                if spinner.is_some() {
+                    spinner.take().unwrap().finish();
+                }
                 break;
             }
 
-            spinner.tick();
+            if spinner.is_none() {
+                // Avoid creating the spinner until at least one
+                // sleep and 'stop' check cycle have completed.
+                spinner = Some(ProgressBar::new_spinner());
+            }
+
+            spinner.as_mut().unwrap().tick();
         }
     }
 }
@@ -132,6 +145,7 @@ struct Shell {
     history_file: Option<String>,
     spinner: SpinnerThreadController,
     json_print_depth: u16,
+    auth_session: Option<AuthSession>,
 }
 
 impl Shell {
@@ -155,9 +169,7 @@ impl Shell {
         // in case we need them.
         DatabaseConnection::append_options(&mut opts);
 
-        // TODO make initoptions better
-        let init_ops = osrf::InitOptions { skip_logging: false };
-        let conf = match osrf::init_with_options(&init_ops, &mut opts) {
+        let conf = match osrf::init_with_options(&mut opts) {
             Ok((c, _)) => c,
             Err(e) => panic!("Cannot init to OpenSRF: {}", e),
         };
@@ -192,6 +204,7 @@ impl Shell {
             db: None,
             db_translator: None,
             history_file: None,
+            auth_session: None,
             json_print_depth: DEFAULT_JSON_PRINT_DEPTH,
         };
 
@@ -341,6 +354,7 @@ impl Shell {
     }
 
     fn print_duration(&self, now: &Instant) {
+        println!("{SEPARATOR}");
         println!("Duration: {}", now.elapsed().as_secs_f32());
         println!("{SEPARATOR}");
     }
@@ -356,24 +370,55 @@ impl Shell {
                 self.exit();
                 Ok(())
             }
-            "idl" => {
-                self.idl_query(&args[..])
-            }
-            "db" => {
-                self.db_command(&args[..])
-            }
-            "req" | "request" => {
-                self.send_request(&args[..])
-            }
-            "router" => {
-                self.send_router_command(&args[..])
-            }
+            "login" => self.handle_login(&args[..]),
+            "idl" => self.idl_query(&args[..]),
+            "db" => self.db_command(&args[..]),
+            "req" | "request" => self.send_request(&args[..]),
+            "reqauth" => self.send_reqauth(&args[..]),
+            "router" => self.send_router_command(&args[..]),
             "help" => {
                 println!("{HELP_TEXT}");
                 Ok(())
             }
             _ => Err(format!("Unknown command: {command}")),
         }
+    }
+
+    fn send_reqauth(&mut self, args: &[&str]) -> Result<(), String> {
+
+        let authtoken = match &self.auth_session {
+            Some(s) => json::from(s.token()).dump(),
+            None => return Err(format!("reqauth requires an auth token")),
+        };
+
+        let mut params = args.to_vec();
+        params.insert(3, authtoken.as_str());
+
+        //self.send_request(params.iter().map(|s| s.as_str()).collect::<Vec<&str>>().as_slice())
+        self.send_request(params.as_slice())
+    }
+
+    fn handle_login(&mut self, args: &[&str]) -> Result<(), String> {
+        self.check_command_length(args, 3)?;
+
+        let username = &args[1];
+        let password = &args[2];
+        let login_type = match args.len() > 3 { true => &args[3], _ => "temp" };
+        let workstation = match args.len() > 4 { true => Some(args[4]), _ => None };
+
+        let args = eg::auth::AuthLoginArgs::new(username, password, login_type, workstation);
+
+        match eg::auth::AuthSession::login(&mut self.client, &args)? {
+            Some(s) => {
+                println!("Login succeeded: {}", s.token());
+                self.auth_session = Some(s);
+            }
+            None => {
+                println!("Login failed");
+            }
+        };
+
+        Ok(())
     }
 
     fn send_router_command(&mut self, args: &[&str]) -> Result<(), String> {
@@ -501,8 +546,8 @@ impl Shell {
     }
 
     fn print_json_record(&self, obj: &json::JsonValue) {
-        println!("{}", obj.pretty(self.json_print_depth));
         println!("{SEPARATOR}");
+        println!("{}", obj.pretty(self.json_print_depth));
     }
 
     fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {

@@ -474,7 +474,7 @@ impl Translator {
                 };
                 Ok(json::from(s))
             }
-            "timestamp" | "timestamptz" | "date" => {
+            "timestamp" | "timestamptz" => {
                 let v: Option<chrono::DateTime<Utc>> = row.get(index);
                 let s = match v {
                     Some(val) => val.format("%FT%T%z").to_string(),
