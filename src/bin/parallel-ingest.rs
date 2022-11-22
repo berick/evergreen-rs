@@ -1,4 +1,5 @@
 use evergreen::db::DatabaseConnection;
+use opensrf;
 use getopts::Options;
 use log::{debug, error, info};
 use postgres as pg;
@@ -29,6 +30,7 @@ fn init() -> Option<(IngestOptions, DatabaseConnection)> {
     let args: Vec<String> = env::args().collect();
     let mut opts = Options::new();
 
+
     opts.optopt("", "sql-file", "SQL Query File", "QUERY_FILE");
 
     opts.optopt("", "max-threads", "Max Worker Threads", "MAX_THREADS");
@@ -58,14 +60,7 @@ fn init() -> Option<(IngestOptions, DatabaseConnection)> {
 
     DatabaseConnection::append_options(&mut opts);
 
-    let params = match opts.parse(&args[1..]) {
-        Ok(p) => p,
-        Err(e) => {
-            error!("\nError processing options: {e}");
-            println!("{}", opts.usage("Usage: "));
-            return None;
-        }
-    };
+    let (_, params) = opensrf::init_with_options(&mut opts).unwrap();
 
     if params.opt_present("help") {
         println!("{}", opts.usage("Usage: "));
@@ -349,7 +344,6 @@ fn reingest_attributes(
 }
 
 fn main() {
-    env_logger::init();
 
     let (options, mut connection) = match init() {
         Some((o, c)) => (o, c),

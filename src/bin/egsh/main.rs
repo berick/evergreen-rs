@@ -32,37 +32,33 @@ const DEFAULT_JSON_PRINT_DEPTH: u16 = 2;
 const HELP_TEXT: &str = r#"
 Options
 
-  * Standard OpenSRF Options
-    --localhost
-    --domain
-    --osrf-config
-
-  * Additional Options
-    --with-database
-      * Connect directly to an Evergreen database.
+  --with-database
+    Connect directly to an Evergreen database.
 
 Commands
 
-  idl get <classname> <pkey-value>
-    Retrieve and IDL-classed object by primary key.
+    idl get <classname> <pkey-value>
+        Retrieve and IDL-classed object by primary key.
 
-  db sleep <seconds>
-    Runs PG_SLEEP(<seconds>).  Mostly for debugging.
+    db sleep <seconds>
+        Runs PG_SLEEP(<seconds>).  Mostly for debugging.
 
-  router <domain> <command> [<router_class>]
-    Sends <command> to the router at <domain> and reports the result.
-    Specify "_" as the <domain> to send the request to the router
-    on the same node as the primary connection node for egsh.
+    login <username> <password> [<login_type>, <workstation>]
 
-  req     <service> <api_name> [<param>, <param>, ...]
-  request <service> <api_name> [<param>, <param>, ...]
-    Send an API request.
+    router <domain> <command> [<router_class>]
+        Sends <command> to the router at <domain> and reports the result.
+        Specify "_" as the <domain> to send the request to the router
+        on the same node as the primary connection node for egsh.
 
-  reqauth <service> <api_name> [<param>, <param>, ...]
-    Same as 'req', but the first parameter sent to the server
-    is always our authtoken.
+    req     <service> <method> [<param>, <param>, ...]
+    request <service> <method> [<param>, <param>, ...]
+        Send an API request.
 
-  help
+    reqauth <service> <method> [<param>, <param>, ...]
+        Same as 'req', but the first parameter sent to the server
+        is our previously stored authtoken (see login)
+
+    help
 
 "#;
 
@@ -73,68 +69,6 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-struct SpinnerThread {
-    stop: Arc<AtomicBool>,
-}
-
-impl SpinnerThread {
-    fn start(&mut self) {
-        let mut spinner: Option<ProgressBar> = None;
-
-        loop {
-            // Start with the sleep so the spinner only appears if the
-            // request is taking enough time for a human to notice.
-            thread::sleep(Duration::from_millis(200));
-
-            if self.stop.load(Ordering::SeqCst) {
-                // Main thread said to cut -> it -> out.
-                if spinner.is_some() {
-                    spinner.take().unwrap().finish();
-                }
-                break;
-            }
-
-            if spinner.is_none() {
-                // Avoid creating the spinner until at least one
-                // sleep and 'stop' check cycle have completed.
-                spinner = Some(ProgressBar::new_spinner());
-            }
-
-            spinner.as_mut().unwrap().tick();
-        }
-    }
-}
-
-struct SpinnerThreadController {
-    progress_flag: Arc<AtomicBool>,
-    join_handle: Option<thread::JoinHandle<()>>,
-    active: bool,
-}
-
-impl SpinnerThreadController {
-
-    /// Show the progress spinner
-    fn show(&mut self) {
-        self.active = true;
-        let flag = self.progress_flag.clone();
-        self.join_handle = Some(
-            thread::spawn(|| SpinnerThread { stop: flag }.start())
-        );
-    }
-
-    /// Hide the progress spinner
-    fn hide(&mut self) {
-        if !self.active { return; }
-
-        self.progress_flag.store(true, Ordering::SeqCst);
-        if let Some(h) = self.join_handle.take() {
-            h.join().ok();
-        }
-        self.progress_flag.store(false, Ordering::SeqCst);
-        self.active = false;
-    }
-}
-
 /// Collection of context data, etc. for our shell.
 struct Shell {
     idl: Arc<idl::Parser>,
@@ -143,7 +77,6 @@ struct Shell {
     client: Client,
     config: Arc<conf::Config>,
     history_file: Option<String>,
-    spinner: SpinnerThreadController,
     json_print_depth: u16,
     auth_session: Option<AuthSession>,
 }
@@ -152,12 +85,6 @@ impl Shell {
 
     /// Handle command line options, OpenSRF init, build the Shell struct.
     fn setup() -> Shell {
-
-        let spinner = SpinnerThreadController {
-            progress_flag: Arc::new(AtomicBool::new(false)),
-            join_handle: None,
-            active: false
-        };
 
         let mut opts = getopts::Options::new();
 
@@ -200,7 +127,6 @@ impl Shell {
             config: conf,
             client,
             idl,
-            spinner,
             db: None,
             db_translator: None,
             history_file: None,
@@ -264,7 +190,6 @@ impl Shell {
             if let Err(e) = self.read_one_line(&mut readline) {
                 eprintln!("Command failed: {e}");
             }
-            self.spinner.hide();
         }
     }
 
@@ -338,8 +263,6 @@ impl Shell {
 
         let now = Instant::now();
 
-        self.spinner.show();
-
         let user_input = user_input.trim();
 
         if user_input.len() == 0 {
@@ -394,7 +317,6 @@ impl Shell {
         let mut params = args.to_vec();
         params.insert(3, authtoken.as_str());
 
-        //self.send_request(params.iter().map(|s| s.as_str()).collect::<Vec<&str>>().as_slice())
         self.send_request(params.as_slice())
     }
 
@@ -489,7 +411,7 @@ impl Shell {
 
         let db = match &mut self.db {
             Some(d) => d,
-            None => return Err(format!("'db' command requires database connection"))
+            None => return Err(format!("'db' command requires --with-database"))
         };
 
         let query = "SELECT PG_SLEEP($1)";

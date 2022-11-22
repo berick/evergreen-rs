@@ -13,21 +13,23 @@ roxmltree = "0.14.1"
 chrono = "0.4.19"
 yaml-rust = "0.4.5"
 log = "0.4.14"
-log4rs = "1.0.0"
 json = "0.12.4"
 postgres = { version = "^0.19.4", features = ["with-chrono-0_4"] }
-rust_decimal = { version = "1.26.1", features = ["db-postgres"] }
+
 getopts = "0.2.21"
+
+# Used by (at least) the parallel export script
 threadpool = "1.8.1"
+
+# Needed for DB / JSON data translations
+pg_interval = "0.4.2"
+rust_decimal = { version = "1.26.1", features = ["db-postgres"] }
 
 # for egsh
 # could be make optional
 indicatif = "0.17.2"
 rustyline = "10.0.0"
 atty = "0.2.14"
-
-# Sometimes this is just simpler than log4rs
-env_logger = "~0.9"
 
 [[bin]]
 name = "egsh"

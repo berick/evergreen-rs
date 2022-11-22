@@ -462,6 +462,14 @@ impl Translator {
                 let v: Option<bool> = row.get(index);
                 Ok(json::from(v))
             }
+            "interval" => {
+                let v: Option<pg_interval::Interval> = row.get(index);
+                let s = match v {
+                    Some(val) => val.to_postgres(),
+                    None => return Ok(JsonValue::Null),
+                };
+                Ok(json::from(s))
+            }
             "varchar" | "char(n)" | "text" | "name" => {
                 let v: Option<String> = row.get(index);
                 Ok(json::from(v))
