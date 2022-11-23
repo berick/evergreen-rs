@@ -12,8 +12,8 @@ use roxmltree;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::sync::Arc;
 use std::ops::Index;
+use std::sync::Arc;
 
 const _OILS_NS_BASE: &str = "http://opensrf.org/spec/IDL/base/v1";
 const OILS_NS_OBJ: &str = "http://open-ils.org/spec/opensrf/IDL/objects/v1";
@@ -250,11 +250,14 @@ impl fmt::Display for Class {
 pub fn wrap(idl: Arc<Parser>, v: json::JsonValue) -> Result<Instance, String> {
     let classname = match v[CLASSNAME_KEY].as_str() {
         Some(c) => c.to_string(),
-        None => return Err(
-            format!("JsonValue cannot be blessed into an idl::Instance")),
+        None => return Err(format!("JsonValue cannot be blessed into an idl::Instance")),
     };
 
-    Ok(Instance { classname, idl, value: v })
+    Ok(Instance {
+        classname,
+        idl,
+        value: v,
+    })
 }
 
 pub struct Instance {
@@ -275,8 +278,14 @@ impl Instance {
 impl Index<&str> for Instance {
     type Output = json::JsonValue;
     fn index(&self, key: &str) -> &Self::Output {
-        if let Some(_) =
-            self.idl.classes().get(&self.classname).unwrap().fields().get(key) {
+        if let Some(_) = self
+            .idl
+            .classes()
+            .get(&self.classname)
+            .unwrap()
+            .fields()
+            .get(key)
+        {
             &self.value[key]
         } else {
             panic!("IDL class {} has no field {key}", self.classname);
@@ -548,7 +557,6 @@ impl Parser {
 }
 
 impl DataSerializer for Parser {
-
     /// Creates a clone of the provided JsonValue, replacing any
     /// IDL-classed arrays with classed hashes.
     fn unpack(&self, value: &json::JsonValue) -> json::JsonValue {

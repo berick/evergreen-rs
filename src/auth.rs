@@ -100,7 +100,6 @@ pub struct AuthSession {
 }
 
 impl AuthSession {
-
     /// Login and acquire an authtoken.
     ///
     /// Returns None on login failure, Err on error.

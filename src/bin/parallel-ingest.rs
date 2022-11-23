@@ -1,7 +1,7 @@
 use evergreen::db::DatabaseConnection;
-use opensrf;
 use getopts::Options;
 use log::{debug, error, info};
+use opensrf;
 use postgres as pg;
 use std::fs;
 use std::thread;
@@ -26,7 +26,6 @@ struct IngestOptions {
 
 /// Read command line options and setup our database connection.
 fn init() -> Option<(IngestOptions, DatabaseConnection)> {
-
     let mut opts = Options::new();
 
     opts.optopt("", "sql-file", "SQL Query File", "QUERY_FILE");
@@ -343,7 +342,6 @@ fn reingest_attributes(
 }
 
 fn main() {
-
     let (options, mut connection) = match init() {
         Some((o, c)) => (o, c),
         None => return,

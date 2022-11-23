@@ -1,16 +1,16 @@
 ///! Tools for translating between IDL objects and Database rows.
 use super::db;
 use super::idl;
+use chrono::prelude::*;
 use json::JsonValue;
 use log::{debug, trace};
 use pg::types::ToSql;
 use postgres as pg;
+use rust_decimal::Decimal;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
-use chrono::prelude::*;
-use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderByDir {
@@ -137,12 +137,14 @@ impl Translator {
     /// numerified withih before the query is issued.
     ///
     /// TODO: create a pkey type to handle strings, numbers, other?
-    pub fn idl_class_by_pkey(&self,
-        classname: &str, pkey: &str) -> Result<Option<JsonValue>, String> {
-
+    pub fn idl_class_by_pkey(
+        &self,
+        classname: &str,
+        pkey: &str,
+    ) -> Result<Option<JsonValue>, String> {
         let idl_class = match self.idl().classes().get(classname) {
             Some(c) => c,
-            None => return Err(format!("No such IDL class: {classname}"))
+            None => return Err(format!("No such IDL class: {classname}")),
         };
 
         let pkey_field = match idl_class.pkey() {
@@ -157,8 +159,11 @@ impl Translator {
 
         let idl_field = match idl_class.fields().get(pkey_field) {
             Some(f) => f,
-            None => return Err(format!(
-                "Field {pkey_field} is listed as pkey, but is not listed as a field"))
+            None => {
+                return Err(format!(
+                    "Field {pkey_field} is listed as pkey, but is not listed as a field"
+                ))
+            }
         };
 
         let mut filter = JsonValue::new_object();
@@ -166,14 +171,15 @@ impl Translator {
         if idl_field.datatype().is_numeric() {
             let num = match pkey.parse::<f64>() {
                 Ok(n) => n,
-                Err(_) => return Err(format!(
-                    "Pkey is numeric, but filter value provided is not: {pkey:?}"))
+                Err(_) => {
+                    return Err(format!(
+                        "Pkey is numeric, but filter value provided is not: {pkey:?}"
+                    ))
+                }
             };
 
             filter.insert(&pkey_field, json::from(num)).unwrap();
-
         } else {
-
             filter.insert(&pkey_field, json::from(pkey)).unwrap();
         }
 
@@ -185,7 +191,10 @@ impl Translator {
         match list.len() {
             0 => Ok(None),
             1 => Ok(Some(list[0].to_owned())),
-            _ => Err(format!("Pkey query for {classname} returned {} results", list.len()))
+            _ => Err(format!(
+                "Pkey query for {classname} returned {} results",
+                list.len()
+            )),
         }
     }
 
@@ -514,7 +523,7 @@ impl Translator {
                 let decimal: Option<Decimal> = row.get(index);
                 match decimal {
                     Some(d) => Ok(json::from(d.to_string())),
-                    None => Ok(JsonValue::Null)
+                    None => Ok(JsonValue::Null),
                 }
             }
             "tsvector" => Ok(JsonValue::Null),

@@ -1,17 +1,17 @@
+use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
-use std::cell::RefCell;
 use std::time::Instant;
 
 use getopts;
 use rustyline;
 
-use evergreen as eg;
-use eg::init;
-use eg::idl;
-use eg::idldb;
 use eg::auth::AuthSession;
 use eg::db::DatabaseConnection;
+use eg::idl;
+use eg::idldb;
+use eg::init;
+use evergreen as eg;
 
 //const PROMPT: &str = "egsh# ";
 const PROMPT: &str = "\x1b[1;32megsh# \x1b[0m";
@@ -62,7 +62,6 @@ Settings
 
 "#;
 
-
 fn main() -> Result<(), String> {
     let mut shell = Shell::setup();
     shell.main_loop();
@@ -80,10 +79,8 @@ struct Shell {
 }
 
 impl Shell {
-
     /// Handle command line options, OpenSRF init, build the Shell struct.
     fn setup() -> Shell {
-
         let mut opts = getopts::Options::new();
         opts.optflag("", "with-database", "Open Direct Database Connection");
 
@@ -136,7 +133,6 @@ impl Shell {
     /// Setup our rustyline instance, used for reading lines (yep)
     /// and managing history.
     fn setup_readline(&mut self) -> rustyline::Editor<()> {
-
         let config = rustyline::Config::builder()
             .history_ignore_space(true)
             .completion_type(rustyline::CompletionType::List)
@@ -155,7 +151,6 @@ impl Shell {
 
     /// Main entry point.
     fn main_loop(&mut self) {
-
         if let Err(e) = self.process_script_lines() {
             eprintln!("{e}");
             return;
@@ -171,7 +166,6 @@ impl Shell {
     }
 
     fn add_to_history(&self, readline: &mut rustyline::Editor<()>, line: &str) {
-
         readline.add_history_entry(line);
 
         if let Some(filename) = self.history_file.as_ref() {
@@ -182,7 +176,6 @@ impl Shell {
     }
 
     fn process_script_lines(&mut self) -> Result<(), String> {
-
         // Avoid mucking with STDIN if we have no piped data to process.
         // Otherwise, it conflict with rustlyine.
         if atty::is(atty::Stream::Stdin) {
@@ -196,7 +189,6 @@ impl Shell {
             buffer.clear();
             match stdin.read_line(&mut buffer) {
                 Ok(count) => {
-
                     if count == 0 {
                         break; // EOF
                     }
@@ -214,7 +206,7 @@ impl Shell {
                     }
                 }
 
-                Err(e) => return Err(format!("Error reading stdin: {e}"))
+                Err(e) => return Err(format!("Error reading stdin: {e}")),
             }
         }
 
@@ -230,9 +222,7 @@ impl Shell {
     ///
     /// If the command was successfully executed, return the command
     /// as a string so it may be added to our history.
-    fn read_one_line(&mut self,
-        readline: &mut rustyline::Editor<()>) -> Result<(), String> {
-
+    fn read_one_line(&mut self, readline: &mut rustyline::Editor<()>) -> Result<(), String> {
         let user_input = match readline.readline(PROMPT) {
             Ok(line) => line,
             Err(_) => return Ok(()),
@@ -293,7 +283,8 @@ impl Shell {
 
         match setting {
             "json_print_depth" => {
-                let value_num = value.parse::<u16>()
+                let value_num = value
+                    .parse::<u16>()
                     .or_else(|e| Err(format!("Invalid value for {setting} {e}")))?;
                 self.json_print_depth = value_num;
                 self.get_setting(args)
@@ -307,8 +298,7 @@ impl Shell {
         let setting = args[1];
 
         match setting {
-            "json_print_depth" =>
-                self.print_json_record(&json::from(self.json_print_depth)),
+            "json_print_depth" => self.print_json_record(&json::from(self.json_print_depth)),
             _ => Err(format!("No such setting: {setting}")),
         }
     }
@@ -332,8 +322,14 @@ impl Shell {
 
         let username = &args[1];
         let password = &args[2];
-        let login_type = match args.len() > 3 { true => &args[3], _ => "temp" };
-        let workstation = match args.len() > 4 { true => Some(args[4]), _ => None };
+        let login_type = match args.len() > 3 {
+            true => &args[3],
+            _ => "temp",
+        };
+        let workstation = match args.len() > 4 {
+            true => Some(args[4]),
+            _ => None,
+        };
 
         let args = eg::auth::AuthLoginArgs::new(username, password, login_type, workstation);
 
@@ -362,13 +358,16 @@ impl Shell {
 
         let router_class = match args.len() > 3 {
             true => Some(args[3]),
-            false => None
+            false => None,
         };
 
         // Assumes the caller wants to see the response for any
         // router request.
         if let Some(resp) =
-            self.ctx().client().send_router_command(domain, command, router_class, true)? {
+            self.ctx()
+                .client()
+                .send_router_command(domain, command, router_class, true)?
+        {
             self.print_json_record(&resp)?;
         }
 
@@ -384,8 +383,7 @@ impl Shell {
         while idx < args.len() {
             let p = match json::parse(args[idx]) {
                 Ok(p) => p,
-                Err(e) => return Err(
-                    format!("Cannot parse parameter: {} {}", args[idx], e)),
+                Err(e) => return Err(format!("Cannot parse parameter: {} {}", args[idx], e)),
             };
             params.push(p);
             idx += 1;
@@ -405,12 +403,11 @@ impl Shell {
 
         match args[1].to_lowercase().as_str() {
             "sleep" => self.db_sleep(args[2]),
-            _ => Err(format!("Unknown 'db' command: {args:?}"))
+            _ => Err(format!("Unknown 'db' command: {args:?}")),
         }
     }
 
     fn db_sleep(&mut self, secs: &str) -> Result<(), String> {
-
         let secs: f64 = match secs.parse::<f64>() {
             Ok(s) => s,
             Err(_) => return Err(format!("Invalid sleep duration: {secs}")),
@@ -418,7 +415,7 @@ impl Shell {
 
         let db = match &mut self.db {
             Some(d) => d,
-            None => return Err(format!("'db' command requires --with-database"))
+            None => return Err(format!("'db' command requires --with-database")),
         };
 
         let query = "SELECT PG_SLEEP($1)";
@@ -467,7 +464,7 @@ impl Shell {
 
         let obj = match translator.idl_class_by_pkey(classname, pkey)? {
             Some(o) => o,
-            None => return Ok(())
+            None => return Ok(()),
         };
 
         self.print_json_record(&obj)
@@ -484,17 +481,14 @@ impl Shell {
     }
 
     fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {
-
         let classname = match obj[idl::CLASSNAME_KEY].as_str() {
             Some(c) => c,
-            None => return Err(format!(
-                "Not a valid IDL object value: {}", obj.dump())),
+            None => return Err(format!("Not a valid IDL object value: {}", obj.dump())),
         };
 
         let idl_class = match self.ctx().idl().classes().get(classname) {
             Some(c) => c,
-            None => return Err(format!(
-                "Object has an invalid class name {classname}")),
+            None => return Err(format!("Object has an invalid class name {classname}")),
         };
 
         let fields = idl_class.real_fields_sorted();
@@ -505,7 +499,7 @@ impl Shell {
             if field.name().len() > maxlen {
                 maxlen = field.name().len();
             }
-        };
+        }
         maxlen += 3;
 
         for field in idl_class.real_fields_sorted() {
@@ -519,4 +513,3 @@ impl Shell {
         Ok(())
     }
 }
-

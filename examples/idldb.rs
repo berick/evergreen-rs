@@ -7,7 +7,6 @@ use opensrf as osrf;
 use std::env;
 
 fn main() -> Result<(), String> {
-
     let mut opts = getopts::Options::new();
     DatabaseConnection::append_options(&mut opts);
 
