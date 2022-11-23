@@ -11,6 +11,7 @@ pub struct Context {
     config: Arc<osrf::conf::Config>,
     idl: Arc<idl::Parser>,
     params: getopts::Matches,
+    host_settings: Option<osrf::sclient::HostSettings>,
 }
 
 impl Context {
@@ -25,6 +26,9 @@ impl Context {
     }
     pub fn params(&self) -> &getopts::Matches {
         &self.params
+    }
+    pub fn host_settings(&self) -> Option<&osrf::sclient::HostSettings> {
+        self.host_settings.as_ref()
     }
 }
 
@@ -57,8 +61,6 @@ pub fn init_with_more_options(
     opts: &mut getopts::Options,
     options: &InitOptions,
 ) -> Result<Context, String> {
-    // Get the IDL from opensrf.settings, but allow the caller to
-    // manually override for testing, etc. purposes.
     opts.optopt("", "idl-file", "Path to IDL file", "IDL_PATH");
 
     let (config, _) = osrf::init::init_with_more_options(opts, &options.osrf_ops)?;
@@ -70,11 +72,24 @@ pub fn init_with_more_options(
     let client = osrf::Client::connect(config.clone())
         .or_else(|e| Err(format!("Cannot connect to OpenSRF: {e}")))?;
 
-    // TODO pull the IDL path from opensrf.settings, while allowing
-    // for override for testing purposes.
-    let idl_file = params
-        .opt_get_default("idl-file", DEFAULT_IDL_PATH.to_string())
-        .unwrap();
+    // We try to get the IDL path from opensrf.settings, but that will
+    // fail if we are not connected to a domain running opensrf.settings
+    // (e.g. a public domain).
+
+    let mut idl_file = DEFAULT_IDL_PATH.to_string();
+    let mut host_settings: Option<osrf::sclient::HostSettings> = None;
+
+    if let Ok(s) = osrf::sclient::SettingsClient::get_host_settings(&client, false) {
+        if let Some(fname) = s.value("/IDL").as_str() {
+            idl_file = fname.to_string();
+        }
+        host_settings = Some(s);
+    }
+
+    // Always honor the command line option if present.
+    if params.opt_present("idl-file") {
+        idl_file = params.opt_str("idl-file").unwrap();
+    }
 
     let idl = idl::Parser::parse_file(&idl_file)
         .or_else(|e| Err(format!("Cannot parse IDL file: {e}")))?;
@@ -86,5 +101,6 @@ pub fn init_with_more_options(
         params,
         config,
         idl,
+        host_settings,
     })
 }
