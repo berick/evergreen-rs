@@ -3,7 +3,6 @@ use opensrf;
 use getopts::Options;
 use log::{debug, error, info};
 use postgres as pg;
-use std::env;
 use std::fs;
 use std::thread;
 use threadpool::ThreadPool;
@@ -27,9 +26,8 @@ struct IngestOptions {
 
 /// Read command line options and setup our database connection.
 fn init() -> Option<(IngestOptions, DatabaseConnection)> {
-    let args: Vec<String> = env::args().collect();
-    let mut opts = Options::new();
 
+    let mut opts = Options::new();
 
     opts.optopt("", "sql-file", "SQL Query File", "QUERY_FILE");
 
@@ -60,7 +58,8 @@ fn init() -> Option<(IngestOptions, DatabaseConnection)> {
 
     DatabaseConnection::append_options(&mut opts);
 
-    let (_, params) = opensrf::init_with_options(&mut opts).unwrap();
+    // We don't need a Client or IDL, so use the OpenSRF init directly.
+    let (_, params) = opensrf::init::init_with_options(&mut opts).unwrap();
 
     if params.opt_present("help") {
         println!("{}", opts.usage("Usage: "));

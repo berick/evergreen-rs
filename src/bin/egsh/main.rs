@@ -1,29 +1,20 @@
-use std::env;
 use std::io;
-use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::time::{Instant, Duration};
+use std::cell::RefCell;
+use std::time::Instant;
 
-use rustyline;
-use rustyline::CompletionType;
 use getopts;
-use indicatif::ProgressBar;
+use rustyline;
 
-use opensrf as osrf;
 use evergreen as eg;
+use eg::init;
 use eg::idl;
 use eg::idldb;
 use eg::auth::AuthSession;
 use eg::db::DatabaseConnection;
-use osrf::conf;
-use osrf::client::Client;
 
 //const PROMPT: &str = "egsh# ";
 const PROMPT: &str = "\x1b[1;32megsh# \x1b[0m";
-const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 const HISTORY_FILE: &str = ".egsh_history";
 const SEPARATOR: &str = "---------------------------------------------------";
 const DEFAULT_REQUEST_TIMEOUT: i32 = 120;
@@ -32,8 +23,11 @@ const DEFAULT_JSON_PRINT_DEPTH: u16 = 2;
 const HELP_TEXT: &str = r#"
 Options
 
-  --with-database
-    Connect directly to an Evergreen database.
+    --with-database
+        Connect directly to an Evergreen database.
+
+    Standard OpenSRF command line options (e.g. --osrf-config)
+    also supported.
 
 Commands
 
@@ -50,15 +44,21 @@ Commands
         Specify "_" as the <domain> to send the request to the router
         on the same node as the primary connection node for egsh.
 
-    req     <service> <method> [<param>, <param>, ...]
-    request <service> <method> [<param>, <param>, ...]
+    req <service> <method> [<param>, <param>, ...]
         Send an API request.
 
     reqauth <service> <method> [<param>, <param>, ...]
         Same as 'req', but the first parameter sent to the server
         is our previously stored authtoken (see login)
 
+    set <setting> <value>
+
     help
+
+Settings
+
+    json_print_depth
+        pretty print depth.  Zero means no pretty printing.
 
 "#;
 
@@ -71,11 +71,9 @@ fn main() -> Result<(), String> {
 
 /// Collection of context data, etc. for our shell.
 struct Shell {
-    idl: Arc<idl::Parser>,
+    ctx: init::Context,
     db: Option<Rc<RefCell<DatabaseConnection>>>,
     db_translator: Option<idldb::Translator>,
-    client: Client,
-    config: Arc<conf::Config>,
     history_file: Option<String>,
     json_print_depth: u16,
     auth_session: Option<AuthSession>,
@@ -87,46 +85,20 @@ impl Shell {
     fn setup() -> Shell {
 
         let mut opts = getopts::Options::new();
-
         opts.optflag("", "with-database", "Open Direct Database Connection");
-        opts.optopt("", "idl-file", "Path to IDL file", "IDL_PATH");
 
         // We don't know if the user passed --with-database until after
         // we parse the command line options.  Append the DB options
         // in case we need them.
         DatabaseConnection::append_options(&mut opts);
 
-        let conf = match osrf::init_with_options(&mut opts) {
-            Ok((c, _)) => c,
+        let context = match eg::init::init_with_options(&mut opts) {
+            Ok(c) => c,
             Err(e) => panic!("Cannot init to OpenSRF: {}", e),
         };
 
-        let conf = conf.into_shared();
-
-        let args: Vec<String> = env::args().collect();
-        let params = opts.parse(&args[1..]).unwrap();
-
-        // TODO pull the IDL path from opensrf.settings, while allowing
-        // for override for testing purposes.
-        let idl_file = params.opt_get_default(
-            "idl-file", DEFAULT_IDL_PATH.to_string()).unwrap();
-
-        let idl = match idl::Parser::parse_file(&idl_file) {
-            Ok(i) => i,
-            Err(e) => panic!("Cannot parse IDL file: {} {}", e, idl_file),
-        };
-
-        let client = match Client::connect(conf.clone()) {
-            Ok(c) => c,
-            Err(e) => panic!("Cannot connect to OpenSRF: {}", e),
-        };
-
-        client.set_serializer(idl::Parser::as_serializer(&idl));
-
         let mut shell = Shell {
-            config: conf,
-            client,
-            idl,
+            ctx: context,
             db: None,
             db_translator: None,
             history_file: None,
@@ -134,23 +106,28 @@ impl Shell {
             json_print_depth: DEFAULT_JSON_PRINT_DEPTH,
         };
 
-        if params.opt_present("with-database") {
-            shell.setup_db(&params);
+        if shell.ctx().params().opt_present("with-database") {
+            shell.setup_db();
         }
 
         shell
     }
 
+    fn ctx(&self) -> &init::Context {
+        &self.ctx
+    }
+
     /// Connect directly to the specified database.
-    fn setup_db(&mut self, params: &getopts::Matches) {
-        let mut db = DatabaseConnection::new_from_options(&params);
+    fn setup_db(&mut self) {
+        let params = self.ctx().params();
+        let mut db = DatabaseConnection::new_from_options(params);
 
         if let Err(e) = db.connect() {
             panic!("Cannot connect to database: {}", e);
         }
 
         let db = db.into_shared();
-        let translator = idldb::Translator::new(self.idl.clone(), db.clone());
+        let translator = idldb::Translator::new(self.ctx().idl().clone(), db.clone());
 
         self.db = Some(db);
         self.db_translator = Some(translator);
@@ -162,7 +139,7 @@ impl Shell {
 
         let config = rustyline::Config::builder()
             .history_ignore_space(true)
-            .completion_type(CompletionType::List)
+            .completion_type(rustyline::CompletionType::List)
             .build();
 
         let mut readline = rustyline::Editor::with_config(config).unwrap();
@@ -299,6 +276,8 @@ impl Shell {
             "req" | "request" => self.send_request(&args[..]),
             "reqauth" => self.send_reqauth(&args[..]),
             "router" => self.send_router_command(&args[..]),
+            "set" => self.set_setting(&args[..]),
+            "get" => self.get_setting(&args[..]),
             "help" => {
                 println!("{HELP_TEXT}");
                 Ok(())
@@ -307,7 +286,35 @@ impl Shell {
         }
     }
 
+    fn set_setting(&mut self, args: &[&str]) -> Result<(), String> {
+        self.check_command_length(args, 3)?;
+        let setting = args[1];
+        let value = args[2];
+
+        match setting {
+            "json_print_depth" => {
+                let value_num = value.parse::<u16>()
+                    .or_else(|e| Err(format!("Invalid value for {setting} {e}")))?;
+                self.json_print_depth = value_num;
+                self.get_setting(args)
+            }
+            _ => Err(format!("No such setting: {setting}"))?,
+        }
+    }
+
+    fn get_setting(&mut self, args: &[&str]) -> Result<(), String> {
+        self.check_command_length(args, 2)?;
+        let setting = args[1];
+
+        match setting {
+            "json_print_depth" =>
+                self.print_json_record(&json::from(self.json_print_depth)),
+            _ => Err(format!("No such setting: {setting}")),
+        }
+    }
+
     fn send_reqauth(&mut self, args: &[&str]) -> Result<(), String> {
+        self.check_command_length(args, 3)?;
 
         let authtoken = match &self.auth_session {
             Some(s) => json::from(s.token()).dump(),
@@ -330,7 +337,7 @@ impl Shell {
 
         let args = eg::auth::AuthLoginArgs::new(username, password, login_type, workstation);
 
-        match eg::auth::AuthSession::login(&mut self.client, &args)? {
+        match eg::auth::AuthSession::login(self.ctx().client(), &args)? {
             Some(s) => {
                 println!("Login succeeded: {}", s.token());
                 self.auth_session = Some(s);
@@ -350,7 +357,7 @@ impl Shell {
         let command = args[2];
 
         if domain.eq("_") {
-            domain = self.config.client().domain().name();
+            domain = self.ctx().config().client().domain().name();
         }
 
         let router_class = match args.len() > 3 {
@@ -361,8 +368,8 @@ impl Shell {
         // Assumes the caller wants to see the response for any
         // router request.
         if let Some(resp) =
-            self.client.send_router_command(domain, command, router_class, true)? {
-            self.print_json_record(&resp);
+            self.ctx().client().send_router_command(domain, command, router_class, true)? {
+            self.print_json_record(&resp)?;
         }
 
         Ok(())
@@ -384,10 +391,10 @@ impl Shell {
             idx += 1;
         }
 
-        let mut ses = self.client.session(args[1]);
+        let mut ses = self.ctx().client().session(args[1]);
         let mut req = ses.request(args[2], &params)?;
         while let Some(resp) = req.recv(DEFAULT_REQUEST_TIMEOUT)? {
-            self.print_json_record(&resp);
+            self.print_json_record(&resp)?;
         }
 
         Ok(())
@@ -463,13 +470,17 @@ impl Shell {
             None => return Ok(())
         };
 
-        self.print_json_record(&obj);
-        Ok(())
+        self.print_json_record(&obj)
     }
 
-    fn print_json_record(&self, obj: &json::JsonValue) {
+    fn print_json_record(&self, obj: &json::JsonValue) -> Result<(), String> {
         println!("{SEPARATOR}");
-        println!("{}", obj.pretty(self.json_print_depth));
+        if self.json_print_depth == 0 {
+            println!("{}", obj.dump());
+        } else {
+            println!("{}", obj.pretty(self.json_print_depth));
+        }
+        Ok(())
     }
 
     fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {
@@ -480,7 +491,7 @@ impl Shell {
                 "Not a valid IDL object value: {}", obj.dump())),
         };
 
-        let idl_class = match self.idl.classes().get(classname) {
+        let idl_class = match self.ctx().idl().classes().get(classname) {
             Some(c) => c,
             None => return Err(format!(
                 "Object has an invalid class name {classname}")),

@@ -104,7 +104,7 @@ impl AuthSession {
     /// Login and acquire an authtoken.
     ///
     /// Returns None on login failure, Err on error.
-    pub fn login(client: &mut Client, args: &AuthLoginArgs) -> Result<Option<AuthSession>, String> {
+    pub fn login(client: &Client, args: &AuthLoginArgs) -> Result<Option<AuthSession>, String> {
         let params = vec![args.to_json_value()];
         let mut ses = client.session("open-ils.auth");
         let mut req = ses.request("open-ils.auth.login", params)?;
