@@ -49,21 +49,6 @@ impl DataType {
     }
 }
 
-/*
-impl Into<&'static str> for DataType {
-    fn into(self) -> &'static str {
-        match self {
-            Self::Int => "int",
-            Self::Float => "float",
-            Self::Text => "text",
-            Self::Bool => "bool",
-            Self::Timestamp => "timestamp",
-            Self::Link => "link",
-        }
-    }
-}
-*/
-
 impl From<&str> for DataType {
     fn from(s: &str) -> Self {
         match s {
@@ -275,6 +260,7 @@ impl Instance {
     }
 }
 
+/// Ensures field access fails on unknown IDL class fields.
 impl Index<&str> for Instance {
     type Output = json::JsonValue;
     fn index(&self, key: &str) -> &Self::Output {
