@@ -1,23 +1,14 @@
-use eg::idl;
 use evergreen as eg;
 use opensrf as osrf;
-use osrf::Client;
 
 fn main() -> Result<(), String> {
-    let conf = osrf::init()?;
-
-    println!("Parsing IDL");
-    let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
-    println!("Done parsing IDL");
-
-    let mut client = Client::connect(conf.into_shared())?;
-
-    client.set_serializer(idl::Parser::as_serializer(&idl));
+    let ctx = eg::init::init()?;
+    let client = ctx.client();
 
     println!("Logging in...");
 
     let args = eg::auth::AuthLoginArgs::new("admin", "demo123", "temp", None);
-    let auth_ses = match eg::auth::AuthSession::login(&mut client, &args)? {
+    let auth_ses = match eg::auth::AuthSession::login(client, &args)? {
         Some(s) => s,
         None => panic!("Login failed"),
     };
@@ -26,7 +17,7 @@ fn main() -> Result<(), String> {
 
     println!("Logged in and got authtoken: {}", token);
 
-    let mut editor = eg::Editor::with_auth(&client, &idl, token);
+    let mut editor = eg::Editor::with_auth(client, ctx.idl(), token);
 
     if editor.checkauth()? {
         println!("Auth Check OK: {}", editor.requestor().unwrap()["usrname"]);

@@ -7,23 +7,17 @@ use opensrf as osrf;
 use std::env;
 
 fn main() -> Result<(), String> {
+
     let mut opts = getopts::Options::new();
-
-    let (mut conf, _) = osrf::init_with_options(&mut opts)?;
-
-    let args: Vec<String> = env::args().collect();
-
     DatabaseConnection::append_options(&mut opts);
 
-    let params = opts.parse(&args[1..]).unwrap();
+    let ctx = eg::init::init_with_options(&mut opts)?;
 
-    let mut db = DatabaseConnection::new_from_options(&params);
+    let mut db = DatabaseConnection::new_from_options(ctx.params());
     db.connect()?;
     let db = db.into_shared();
 
-    let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
-
-    let translator = Translator::new(idl.clone(), db.clone());
+    let translator = Translator::new(ctx.idl().clone(), db.clone());
 
     // Give me all rows
     let mut search = IdlClassSearch::new("aou");

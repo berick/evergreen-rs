@@ -1,18 +1,12 @@
 use eg::idl;
 use evergreen as eg;
 use opensrf as osrf;
-use osrf::Client;
 
 fn main() -> Result<(), String> {
-    let conf = osrf::init()?;
+    let ctx = eg::init::init()?;
+    let client = ctx.client();
 
-    let idl = idl::Parser::parse_file("/openils/conf/fm_IDL.xml")?;
-
-    let mut client = Client::connect(conf.into_shared())?;
-
-    client.set_serializer(idl::Parser::as_serializer(&idl));
-
-    println!("parser class count = {}", idl.classes().len());
+    println!("parser class count = {}", ctx.idl().classes().len());
 
     let mut ses = client.session("open-ils.cstore");
 
@@ -62,9 +56,10 @@ fn main() -> Result<(), String> {
 
     let args = eg::auth::AuthLoginArgs::new("admin", "demo123", "temp", None);
 
-    let auth_ses = eg::auth::AuthSession::login(&mut client, &args)?;
-
-    println!("\nLogged in and got authtoken: {}", auth_ses.token());
+    match eg::auth::AuthSession::login(client, &args)? {
+        Some(ses) => println!("\nLogged in and got authtoken: {}", ses.token()),
+        None => println!("\nLogin failed"),
+    }
 
     Ok(())
 }

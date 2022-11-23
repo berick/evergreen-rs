@@ -3,7 +3,6 @@ use std::sync::Arc;
 use super::idl;
 use getopts;
 use opensrf as osrf;
-use osrf::sclient;
 
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 
