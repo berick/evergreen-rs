@@ -52,14 +52,16 @@ Commands
         is our previously stored authtoken (see login)
 
     set <setting> <value>
+        Set a setting value
+
+    get <setting>
+        Get the value of a specific setting.
+
+    list
+        List all settings
 
     help
-
-Settings
-
-    json_print_depth
-        pretty print depth.  Zero means no pretty printing.
-
+        Show this message
 "#;
 
 fn main() -> Result<(), String> {
@@ -147,6 +149,13 @@ impl Shell {
         }
 
         readline
+    }
+
+    fn db_translator_mut(&mut self) -> Result<&mut idldb::Translator, String> {
+        match self.db_translator.as_mut() {
+            Some(t) => Ok(t),
+            None => Err(format!("DB connection required"))?,
+        }
     }
 
     /// Main entry point.
@@ -268,6 +277,7 @@ impl Shell {
             "router" => self.send_router_command(&args[..]),
             "set" => self.set_setting(&args[..]),
             "get" => self.get_setting(&args[..]),
+            "list" => self.list_settings(),
             "help" => {
                 println!("{HELP_TEXT}");
                 Ok(())
@@ -276,8 +286,15 @@ impl Shell {
         }
     }
 
+    fn list_settings(&mut self) -> Result<(), String> {
+        for setting in ["json_print_depth"] {
+            self.get_setting(&["get", setting])?;
+        }
+        Ok(())
+    }
+
     fn set_setting(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 3)?;
+        self.args_min_length(args, 3)?;
         let setting = args[1];
         let value = args[2];
 
@@ -294,17 +311,20 @@ impl Shell {
     }
 
     fn get_setting(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 2)?;
+        self.args_min_length(args, 2)?;
         let setting = args[1];
 
-        match setting {
-            "json_print_depth" => self.print_json_record(&json::from(self.json_print_depth)),
-            _ => Err(format!("No such setting: {setting}")),
-        }
+        let value = match setting {
+            "json_print_depth" => self.json_print_depth.to_string(),
+            _ => return Err(format!("No such setting: {setting}")),
+        };
+
+        println!("{setting} = {value}");
+        Ok(())
     }
 
     fn send_reqauth(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 3)?;
+        self.args_min_length(args, 3)?;
 
         let authtoken = match &self.auth_session {
             Some(s) => json::from(s.token()).dump(),
@@ -318,7 +338,7 @@ impl Shell {
     }
 
     fn handle_login(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 3)?;
+        self.args_min_length(args, 3)?;
 
         let username = &args[1];
         let password = &args[2];
@@ -347,7 +367,7 @@ impl Shell {
     }
 
     fn send_router_command(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 3)?;
+        self.args_min_length(args, 3)?;
 
         let mut domain = args[1];
         let command = args[2];
@@ -375,7 +395,7 @@ impl Shell {
     }
 
     fn send_request(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 3)?;
+        self.args_min_length(args, 3)?;
 
         let mut params: Vec<json::JsonValue> = Vec::new();
 
@@ -399,7 +419,7 @@ impl Shell {
     }
 
     fn db_command(&mut self, args: &[&str]) -> Result<(), String> {
-        self.check_command_length(args, 3)?;
+        self.args_min_length(args, 3)?;
 
         match args[1].to_lowercase().as_str() {
             "sleep" => self.db_sleep(args[2]),
@@ -430,7 +450,7 @@ impl Shell {
     }
 
     /// Returns Err if the str slice does not contain enough entries.
-    fn check_command_length(&self, args: &[&str], len: usize) -> Result<(), String> {
+    fn args_min_length(&self, args: &[&str], len: usize) -> Result<(), String> {
         if args.len() < len {
             Err(format!("Command is incomplete: {args:?}"))
         } else {
@@ -444,10 +464,11 @@ impl Shell {
 
     /// Launch an IDL query.
     fn idl_query(&mut self, parts: &[&str]) -> Result<(), String> {
-        self.check_command_length(&parts[..], 4)?;
+        self.args_min_length(&parts[..], 4)?;
 
         match parts[1] {
             "get" => self.idl_get(&parts[2..]),
+            "search" => self.idl_search(&parts[2..]),
             _ => return Err(format!("Could not parse idl query command: {parts:?}")),
         }
     }
@@ -457,10 +478,7 @@ impl Shell {
         let classname = parts[0];
         let pkey = parts[1];
 
-        let translator = match self.db_translator.as_mut() {
-            Some(t) => t,
-            None => return Err(format!("Database connection required")),
-        };
+        let translator = self.db_translator_mut()?;
 
         let obj = match translator.idl_class_by_pkey(classname, pkey)? {
             Some(o) => o,
@@ -468,6 +486,53 @@ impl Shell {
         };
 
         self.print_json_record(&obj)
+    }
+
+    /// Retrieve a single IDL object by its primary key value
+    fn idl_search(&mut self, parts: &[&str]) -> Result<(), String> {
+        self.args_min_length(&parts[..], 3)?;
+
+        let classname = parts[0];
+        let fieldname = parts[1];
+        let value = parts[2];
+
+        let idl_class = match self.ctx().idl().classes().get(classname) {
+            Some(c) => c,
+            None => Err(format!("No such IDL class: {classname}"))?,
+        };
+
+        let idl_field = match idl_class.fields().get(fieldname) {
+            Some(f) => f,
+            None => Err(format!("No such IDL field: {fieldname}"))?,
+        };
+
+        let mut search = idldb::IdlClassSearch::new(classname);
+        let mut filter = json::JsonValue::new_object();
+
+        // TODO ::Link datatype is not necessarily numeric.
+        // Requires checking the target of the link.
+        if idl_field.datatype().is_numeric() || idl_field.datatype() == &idl::DataType::Link {
+
+            let value_num = value.parse::<i64>()
+                .or_else(|_| Err(format!("Invalid search value for numeric field")))?;
+
+            filter[fieldname] = json::from(value_num)
+
+        } else {
+
+            let ilike = format!("%%{value}%%");
+            filter[fieldname] = json::object!{"ilike": ilike.as_str()};
+        }
+
+        search.set_filter(filter);
+
+        let translator = self.db_translator_mut()?;
+
+        for obj in translator.idl_class_search(&search)? {
+            self.print_json_record(&obj)?
+        }
+
+        Ok(())
     }
 
     fn print_json_record(&self, obj: &json::JsonValue) -> Result<(), String> {

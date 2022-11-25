@@ -407,7 +407,7 @@ impl Translator {
             let operand = key.to_uppercase();
 
             match operand.as_str() {
-                "IS" | "IS NOT" | "<" | "<=" | ">" | ">=" | "<>" | "!=" => {}
+                "IS" | "IS NOT" | "LIKE" | "ILIKE" | "<" | "<=" | ">" | ">=" | "<>" | "!=" => {}
                 _ => {
                     return Err(format!("Unsupported operand: {operand}"));
                 }
