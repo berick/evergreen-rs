@@ -131,6 +131,14 @@ impl Translator {
         &self.idl
     }
 
+    pub fn is_supported_operand(op: &str) -> bool {
+        match op.to_uppercase().as_str() {
+            "IS" | "IS NOT" | "LIKE" | "ILIKE" | "<" | "<=" | ">" | ">=" | "<>" | "!=" | "~"
+            | "~*" => true,
+            _ => false,
+        }
+    }
+
     /// Retrieve an IDL object via pkey lookup.
     ///
     /// Numeric pkey values should be passed as strings.  They will be
@@ -406,11 +414,8 @@ impl Translator {
         for (key, val) in obj.entries() {
             let operand = key.to_uppercase();
 
-            match operand.as_str() {
-                "IS" | "IS NOT" | "LIKE" | "ILIKE" | "<" | "<=" | ">" | ">=" | "<>" | "!=" => {}
-                _ => {
-                    return Err(format!("Unsupported operand: {operand}"));
-                }
+            if !Translator::is_supported_operand(&operand) {
+                Err(format!("Unsupported operand: {operand}"))?;
             }
 
             sql += &format!(

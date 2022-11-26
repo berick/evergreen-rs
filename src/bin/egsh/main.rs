@@ -34,6 +34,11 @@ Commands
     idl get <classname> <pkey-value>
         Retrieve and IDL-classed object by primary key.
 
+    idl search <classname> <field> <operand> <value>
+        Examples:
+            idl search aou name ~* "branch"
+            idl search aout depth > 1
+
     db sleep <seconds>
         Runs PG_SLEEP(<seconds>).  Mostly for debugging.
 
@@ -152,10 +157,7 @@ impl Shell {
     }
 
     fn db_translator_mut(&mut self) -> Result<&mut idldb::Translator, String> {
-        match self.db_translator.as_mut() {
-            Some(t) => Ok(t),
-            None => Err(format!("DB connection required"))?,
-        }
+        self.db_translator.as_mut().ok_or(format!("DB connection required"))
     }
 
     /// Main entry point.
@@ -490,39 +492,38 @@ impl Shell {
 
     /// Retrieve a single IDL object by its primary key value
     fn idl_search(&mut self, parts: &[&str]) -> Result<(), String> {
-        self.args_min_length(&parts[..], 3)?;
+        self.args_min_length(&parts[..], 4)?;
 
         let classname = parts[0];
         let fieldname = parts[1];
-        let value = parts[2];
+        let operand = parts[2];
+        let value = parts[3];
 
-        let idl_class = match self.ctx().idl().classes().get(classname) {
-            Some(c) => c,
-            None => Err(format!("No such IDL class: {classname}"))?,
-        };
+        let idl_class = self.ctx().idl().classes().get(classname)
+            .ok_or(format!("No such IDL class: {classname}"))?;
 
-        let idl_field = match idl_class.fields().get(fieldname) {
-            Some(f) => f,
-            None => Err(format!("No such IDL field: {fieldname}"))?,
-        };
+        if idl_class.fields().get(fieldname).is_none() {
+            Err(format!("No such IDL field: {fieldname}"))?;
+        }
+
+        if !idldb::Translator::is_supported_operand(&operand) {
+            Err(format!("Invalid query operand: {operand}"))?;
+        }
+
+        let value = json::parse(value)
+            .or_else(|e| Err(format!("Cannot parse query value: {value} : {e}")))?;
 
         let mut search = idldb::IdlClassSearch::new(classname);
+
+        // Apply some kind of limit here to prevent
+        // excessive queries.  TODO: configurable?
+        // TODO: support paging in the UI?
+        search.set_pager(idldb::Pager::new(100, 0));
+
         let mut filter = json::JsonValue::new_object();
-
-        // TODO ::Link datatype is not necessarily numeric.
-        // Requires checking the target of the link.
-        if idl_field.datatype().is_numeric() || idl_field.datatype() == &idl::DataType::Link {
-
-            let value_num = value.parse::<i64>()
-                .or_else(|_| Err(format!("Invalid search value for numeric field")))?;
-
-            filter[fieldname] = json::from(value_num)
-
-        } else {
-
-            let ilike = format!("%%{value}%%");
-            filter[fieldname] = json::object!{"ilike": ilike.as_str()};
-        }
+        let mut subfilter = json::JsonValue::new_object();
+        subfilter[operand] = value;
+        filter[fieldname] = subfilter;
 
         search.set_filter(filter);
 
@@ -546,15 +547,11 @@ impl Shell {
     }
 
     fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {
-        let classname = match obj[idl::CLASSNAME_KEY].as_str() {
-            Some(c) => c,
-            None => return Err(format!("Not a valid IDL object value: {}", obj.dump())),
-        };
+        let classname = obj[idl::CLASSNAME_KEY].as_str()
+            .ok_or(format!("Not a valid IDL object value: {}", obj.dump()))?;
 
-        let idl_class = match self.ctx().idl().classes().get(classname) {
-            Some(c) => c,
-            None => return Err(format!("Object has an invalid class name {classname}")),
-        };
+        let idl_class = self.ctx().idl().classes().get(classname)
+            .ok_or(format!("Object has an invalid class name {classname}"))?;
 
         let fields = idl_class.real_fields_sorted();
 
