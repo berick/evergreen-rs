@@ -12,6 +12,10 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
+
+const SUPPORTED_OPERANDS: &[&'static str] = &["IS", "IS NOT", "LIKE",
+    "ILIKE", "<", "<=", ">", ">=", "<>", "!=", "~", "=", "!~", "!~*", "~*"];
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderByDir {
     Asc,
@@ -132,11 +136,7 @@ impl Translator {
     }
 
     pub fn is_supported_operand(op: &str) -> bool {
-        match op.to_uppercase().as_str() {
-            "IS" | "IS NOT" | "LIKE" | "ILIKE" | "<" | "<=" | ">" | ">=" | "<>" | "!=" | "~"
-            | "~*" => true,
-            _ => false,
-        }
+        SUPPORTED_OPERANDS.contains(&op.to_uppercase().as_str())
     }
 
     /// Retrieve an IDL object via pkey lookup.

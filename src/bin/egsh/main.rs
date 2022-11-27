@@ -39,6 +39,10 @@ Commands
             idl search aou name ~* "branch"
             idl search aout depth > 1
 
+    idlf ...
+        Same as 'idl' commands but values as displayed as key / value
+        pairs, minus any NULL values.
+
     db sleep <seconds>
         Runs PG_SLEEP(<seconds>).  Mostly for debugging.
 
@@ -81,8 +85,10 @@ struct Shell {
     db: Option<Rc<RefCell<DatabaseConnection>>>,
     db_translator: Option<idldb::Translator>,
     history_file: Option<String>,
-    json_print_depth: u16,
     auth_session: Option<AuthSession>,
+    result_count: usize,
+    json_print_depth: u16,
+    is_formatted: bool,
 }
 
 impl Shell {
@@ -107,6 +113,8 @@ impl Shell {
             db_translator: None,
             history_file: None,
             auth_session: None,
+            result_count: 0,
+            is_formatted: false,
             json_print_depth: DEFAULT_JSON_PRINT_DEPTH,
         };
 
@@ -247,6 +255,7 @@ impl Shell {
             return Ok(());
         }
 
+        self.result_count = 0;
         self.dispatch_command(&user_input)?;
         self.print_duration(&now);
         self.add_to_history(readline, &user_input);
@@ -256,7 +265,11 @@ impl Shell {
 
     fn print_duration(&self, now: &Instant) {
         println!("{SEPARATOR}");
-        println!("Duration: {}", now.elapsed().as_secs_f32());
+        print!("Duration: {:.4}", now.elapsed().as_secs_f32());
+        if self.result_count > 0 {
+            print!("; Results {}", self.result_count);
+        }
+        println!("");
         println!("{SEPARATOR}");
     }
 
@@ -272,7 +285,14 @@ impl Shell {
                 Ok(())
             }
             "login" => self.handle_login(&args[..]),
-            "idl" => self.idl_query(&args[..]),
+            "idl" => {
+                self.is_formatted = false;
+                self.idl_query(&args[..])
+            }
+            "idlf" => {
+                self.is_formatted = true;
+                self.idl_query(&args[..])
+            }
             "db" => self.db_command(&args[..]),
             "req" | "request" => self.send_request(&args[..]),
             "reqauth" => self.send_reqauth(&args[..]),
@@ -487,7 +507,11 @@ impl Shell {
             None => return Ok(()),
         };
 
-        self.print_json_record(&obj)
+        if self.is_formatted {
+            self.print_idl_object(&obj)
+        } else {
+            self.print_json_record(&obj)
+        }
     }
 
     /// Retrieve a single IDL object by its primary key value
@@ -530,13 +554,19 @@ impl Shell {
         let translator = self.db_translator_mut()?;
 
         for obj in translator.idl_class_search(&search)? {
-            self.print_json_record(&obj)?
+            if self.is_formatted {
+                self.print_idl_object(&obj)?;
+            } else {
+                self.print_json_record(&obj)?;
+            }
         }
 
         Ok(())
     }
 
-    fn print_json_record(&self, obj: &json::JsonValue) -> Result<(), String> {
+    fn print_json_record(&mut self, obj: &json::JsonValue) -> Result<(), String> {
+        self.result_count += 1;
+
         println!("{SEPARATOR}");
         if self.json_print_depth == 0 {
             println!("{}", obj.dump());
@@ -567,7 +597,9 @@ impl Shell {
         for field in idl_class.real_fields_sorted() {
             let name = field.name();
             let value = &obj[name];
-            println!("{name:.<width$} {value}", width = maxlen);
+            if !value.is_null() {
+                println!("{name:.<width$} {value}", width = maxlen);
+            }
         }
 
         println!("{SEPARATOR}");
