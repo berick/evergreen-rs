@@ -576,33 +576,41 @@ impl Shell {
         Ok(())
     }
 
-    fn print_idl_object(&self, obj: &json::JsonValue) -> Result<(), String> {
+    fn print_idl_object(&mut self, obj: &json::JsonValue) -> Result<(), String> {
+        self.result_count += 1;
+
         let classname = obj[idl::CLASSNAME_KEY].as_str()
             .ok_or(format!("Not a valid IDL object value: {}", obj.dump()))?;
 
         let idl_class = self.ctx().idl().classes().get(classname)
             .ok_or(format!("Object has an invalid class name {classname}"))?;
 
-        let fields = idl_class.real_fields_sorted();
-
         // Get the max field name length for improved formatting.
         let mut maxlen = 0;
-        for field in fields.iter() {
-            if field.name().len() > maxlen {
-                maxlen = field.name().len();
+        let mut fields = Vec::new();
+        for field in idl_class.real_fields_sorted() {
+            let fname = field.name();
+
+            if obj[fname].is_null() { continue; }
+
+            fields.push(fname);
+
+            if fname.len() > maxlen {
+                maxlen = fname.len();
             }
         }
+
         maxlen += 3;
 
-        for field in idl_class.real_fields_sorted() {
-            let name = field.name();
+        println!("{SEPARATOR}");
+
+        for name in fields {
             let value = &obj[name];
             if !value.is_null() {
                 println!("{name:.<width$} {value}", width = maxlen);
             }
         }
 
-        println!("{SEPARATOR}");
 
         Ok(())
     }
