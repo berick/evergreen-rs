@@ -12,9 +12,9 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
-
-const SUPPORTED_OPERANDS: &[&'static str] = &["IS", "IS NOT", "LIKE",
-    "ILIKE", "<", "<=", ">", ">=", "<>", "!=", "~", "=", "!~", "!~*", "~*"];
+const SUPPORTED_OPERANDS: &[&'static str] = &[
+    "IS", "IS NOT", "LIKE", "ILIKE", "<", "<=", ">", ">=", "<>", "!=", "~", "=", "!~", "!~*", "~*",
+];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderByDir {

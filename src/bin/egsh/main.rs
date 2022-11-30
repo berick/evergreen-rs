@@ -40,8 +40,8 @@ Commands
             idl search aout depth > 1
 
     idlf ...
-        Same as 'idl' commands but values as displayed as key / value
-        pairs, minus any NULL values.
+        Same as 'idl' commands but values are displayed as formatted
+        key / value pairs, minus NULL values.
 
     db sleep <seconds>
         Runs PG_SLEEP(<seconds>).  Mostly for debugging.
@@ -165,7 +165,9 @@ impl Shell {
     }
 
     fn db_translator_mut(&mut self) -> Result<&mut idldb::Translator, String> {
-        self.db_translator.as_mut().ok_or(format!("DB connection required"))
+        self.db_translator
+            .as_mut()
+            .ok_or(format!("DB connection required"))
     }
 
     /// Main entry point.
@@ -523,7 +525,11 @@ impl Shell {
         let operand = parts[2];
         let value = parts[3];
 
-        let idl_class = self.ctx().idl().classes().get(classname)
+        let idl_class = self
+            .ctx()
+            .idl()
+            .classes()
+            .get(classname)
             .ok_or(format!("No such IDL class: {classname}"))?;
 
         if idl_class.fields().get(fieldname).is_none() {
@@ -579,10 +585,15 @@ impl Shell {
     fn print_idl_object(&mut self, obj: &json::JsonValue) -> Result<(), String> {
         self.result_count += 1;
 
-        let classname = obj[idl::CLASSNAME_KEY].as_str()
+        let classname = obj[idl::CLASSNAME_KEY]
+            .as_str()
             .ok_or(format!("Not a valid IDL object value: {}", obj.dump()))?;
 
-        let idl_class = self.ctx().idl().classes().get(classname)
+        let idl_class = self
+            .ctx()
+            .idl()
+            .classes()
+            .get(classname)
             .ok_or(format!("Object has an invalid class name {classname}"))?;
 
         // Get the max field name length for improved formatting.
@@ -591,7 +602,9 @@ impl Shell {
         for field in idl_class.real_fields_sorted() {
             let fname = field.name();
 
-            if obj[fname].is_null() { continue; }
+            if obj[fname].is_null() {
+                continue;
+            }
 
             fields.push(fname);
 
@@ -610,7 +623,6 @@ impl Shell {
                 println!("{name:.<width$} {value}", width = maxlen);
             }
         }
-
 
         Ok(())
     }
