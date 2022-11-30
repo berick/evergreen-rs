@@ -88,7 +88,7 @@ struct Shell {
     auth_session: Option<AuthSession>,
     result_count: usize,
     json_print_depth: u16,
-    command: Vec<String>,
+    command: String,
 }
 
 impl Shell {
@@ -114,7 +114,7 @@ impl Shell {
             history_file: None,
             auth_session: None,
             result_count: 0,
-            command: Vec::new(),
+            command: String::new(),
             json_print_depth: DEFAULT_JSON_PRINT_DEPTH,
         };
 
@@ -275,45 +275,53 @@ impl Shell {
 
     /// Route a command line to its handler.
     fn dispatch_command(&mut self, line: &str) -> Result<(), String> {
-        self.command = line.split(" ").map(|s| s.to_string()).collect();
+        let full_args: Vec<&str> = line.split(" ").collect();
 
-        self.command[0] = self.command[0].to_lowercase();
-        let command = self.command[0].as_str();
+        if full_args.len() == 0 {
+            return Ok(())
+        }
 
-        match command {
+        self.command = full_args[0].to_lowercase();
+
+        let args = match full_args.len() {
+            0 => &[],
+            _ => &full_args[1..],
+        };
+
+        match self.command.as_str() {
             "stop" | "quit" | "exit" => {
                 self.exit();
                 Ok(())
             }
-            "login" => self.handle_login(),
-            "idl" => self.idl_query(),
-            "idlf" => self.idl_query(),
-            "db" => self.db_command(),
-            "req" | "request" => self.send_request(),
-            "reqauth" => self.send_reqauth(),
-            "router" => self.send_router_command(),
-            "set" => self.set_setting(),
-            "get" => self.get_setting(),
+            "login" => self.handle_login(args),
+            "idl" => self.idl_query(args),
+            "idlf" => self.idl_query(args),
+            "db" => self.db_command(args),
+            "req" | "request" => self.send_request(args),
+            "reqauth" => self.send_reqauth(args),
+            "router" => self.send_router_command(args),
+            "set" => self.set_setting(args),
+            "get" => self.get_setting(args),
             "list" => self.list_settings(),
             "help" => {
                 println!("{HELP_TEXT}");
                 Ok(())
             }
-            _ => Err(format!("Unknown command: {command}")),
+            _ => Err(format!("Unknown command: {}", self.command)),
         }
     }
 
     fn list_settings(&mut self) -> Result<(), String> {
         for setting in ["json_print_depth"] {
-            self.get_setting_value(setting)?;
+            self.get_setting(&[setting])?;
         }
         Ok(())
     }
 
-    fn set_setting(&mut self) -> Result<(), String> {
-        self.command_min_length(3)?;
-        let setting = self.command[1].as_str();
-        let value = self.command[2].as_str();
+    fn set_setting(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
+        let setting = args[0];
+        let value = args[1];
 
         match setting {
             "json_print_depth" => {
@@ -321,20 +329,16 @@ impl Shell {
                     .parse::<u16>()
                     .or_else(|e| Err(format!("Invalid value for {setting} {e}")))?;
                 self.json_print_depth = value_num;
+                self.get_setting(args)
             }
             _ => Err(format!("No such setting: {setting}"))?,
         }
-
-        self.get_setting_value(setting)
     }
 
-    fn get_setting(&mut self) -> Result<(), String> {
-        self.command_min_length(2)?;
-        let setting = self.command[1].as_str();
-        self.get_setting_value(setting)
-    }
+    fn get_setting(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 1)?;
+        let setting = args[0];
 
-    fn get_setting_value(&self, setting: &str) -> Result<(), String> {
         let value = match setting {
             "json_print_depth" => self.json_print_depth.to_string(),
             _ => return Err(format!("No such setting: {setting}")),
@@ -344,31 +348,32 @@ impl Shell {
         Ok(())
     }
 
-    fn send_reqauth(&mut self) -> Result<(), String> {
-        self.command_min_length(3)?;
+    fn send_reqauth(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
 
         let authtoken = match &self.auth_session {
             Some(s) => json::from(s.token()).dump(),
             None => return Err(format!("reqauth requires an auth token")),
         };
 
-        self.command.insert(3, authtoken.clone());
+        let mut params = args.to_vec();
+        params.insert(2, authtoken.as_str());
 
-        self.send_request()
+        self.send_request(params.as_slice())
     }
 
-    fn handle_login(&mut self) -> Result<(), String> {
-        self.command_min_length(3)?;
+    fn handle_login(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
 
-        let username = self.command[1].as_str();
-        let password = self.command[2].as_str();
+        let username = &args[0];
+        let password = &args[1];
 
-        let login_type = match self.command.len() > 3 {
-            true => self.command[3].as_str(),
+        let login_type = match args.len() > 3 {
+            true => &args[3],
             _ => "temp",
         };
-        let workstation = match self.command.len() > 4 {
-            true => Some(self.command[4].as_str()),
+        let workstation = match args.len() > 4 {
+            true => Some(args[4]),
             _ => None,
         };
 
@@ -387,18 +392,18 @@ impl Shell {
         Ok(())
     }
 
-    fn send_router_command(&mut self) -> Result<(), String> {
-        self.command_min_length(3)?;
+    fn send_router_command(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
 
-        let mut domain = self.command[1].as_str();
-        let command = self.command[2].as_str();
+        let mut domain = args[0];
+        let command = args[1];
 
         if domain.eq("_") {
             domain = self.ctx().config().client().domain().name();
         }
 
-        let router_class = match self.command.len() > 3 {
-            true => Some(self.command[3].as_str()),
+        let router_class = match args.len() > 2 {
+            true => Some(args[2]),
             false => None,
         };
 
@@ -415,39 +420,39 @@ impl Shell {
         Ok(())
     }
 
-    fn send_request(&mut self) -> Result<(), String> {
-        self.command_min_length(3)?;
+    fn send_request(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
 
         let mut params: Vec<json::JsonValue> = Vec::new();
 
-        let mut idx = 3;
-        while idx < self.command.len() {
-            let p = match json::parse(self.command[idx].as_str()) {
+        let mut idx = 2;
+        while idx < args.len() {
+            let p = match json::parse(args[idx]) {
                 Ok(p) => p,
-                Err(e) => return Err(format!("Cannot parse parameter: {} {}", self.command[idx], e)),
+                Err(e) => return Err(format!("Cannot parse parameter: {} {}", args[idx], e)),
             };
             params.push(p);
             idx += 1;
         }
 
-        let mut ses = self.ctx().client().session(self.command[1].as_str());
-        let mut req = ses.request(self.command[2].as_str(), &params)?;
+        let mut ses = self.ctx().client().session(args[0]);
+        let mut req = ses.request(args[1], &params)?;
+
+println!("REQ...");
         while let Some(resp) = req.recv(DEFAULT_REQUEST_TIMEOUT)? {
+println!("REQ GOT {resp}");
             self.print_json_record(&resp)?;
         }
 
         Ok(())
     }
 
-    fn db_command(&mut self) -> Result<(), String> {
-        self.command_min_length(3)?;
+    fn db_command(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
 
-        match self.command[1].to_lowercase().as_str() {
-            "sleep" => {
-                let sleep = self.command[2].clone();
-                self.db_sleep(&sleep)
-            }
-            _ => Err(format!("Unknown 'db' command: {:?}", self.command)),
+        match args[0].to_lowercase().as_str() {
+            "sleep" => self.db_sleep(args[1]),
+            _ => Err(format!("Unknown 'db' command: {args:?}")),
         }
     }
 
@@ -474,43 +479,42 @@ impl Shell {
     }
 
     /// Returns Err if the str slice does not contain enough entries.
-    fn command_min_length(&self, len: usize) -> Result<(), String> {
-        if self.command.len() < len {
-            Err(format!("Command is incomplete: {:?}", self.command))
+    fn args_min_length(&self, args: &[&str], len: usize) -> Result<(), String> {
+        if args.len() < len {
+            Err(format!("Command is incomplete: {args:?}"))
         } else {
             Ok(())
         }
     }
-
 
     fn exit(&mut self) {
         std::process::exit(0x0);
     }
 
     /// Launch an IDL query.
-    fn idl_query(&mut self) -> Result<(), String> {
-        self.command_min_length(4)?;
+    fn idl_query(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 3)?;
 
-        match self.command[1].as_str() {
-            "get" => self.idl_get(),
-            "search" => self.idl_search(),
-            _ => return Err(format!("Could not parse idl query command: {:?}", self.command)),
+        match args[0] {
+            "get" => self.idl_get(args),
+            "search" => self.idl_search(args),
+            _ => return Err(format!("Could not parse idl query command: {args:?}")),
         }
     }
 
     /// Retrieve a single IDL object by its primary key value
-    fn idl_get(&mut self) -> Result<(), String> {
-        let classname = self.command[2].clone();
-        let pkey = self.command[3].clone();
+    fn idl_get(&mut self, args: &[&str]) -> Result<(), String> {
+        let classname = args[1];
+        let pkey = args[2];
 
         let translator = self.db_translator_mut()?;
 
-        let obj = match translator.idl_class_by_pkey(&classname, &pkey)? {
+        let obj = match translator.idl_class_by_pkey(classname, pkey)? {
             Some(o) => o,
             None => return Ok(()),
         };
 
-        if self.command[0].as_str().eq("idlf") {
+        if self.command.eq("idlf") {
             self.print_idl_object(&obj)
         } else {
             self.print_json_record(&obj)
@@ -518,13 +522,13 @@ impl Shell {
     }
 
     /// Retrieve a single IDL object by its primary key value
-    fn idl_search(&mut self) -> Result<(), String> {
-        self.command_min_length(6)?;
+    fn idl_search(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 5)?;
 
-        let classname = self.command[2].as_str();
-        let fieldname = self.command[3].as_str();
-        let operand = self.command[4].as_str();
-        let value = self.command[5].as_str();
+        let classname = args[1];
+        let fieldname = args[2];
+        let operand = args[3];
+        let value = args[4];
 
         let idl_class = self.ctx().idl().classes().get(classname)
             .ok_or(format!("No such IDL class: {classname}"))?;
@@ -557,7 +561,7 @@ impl Shell {
         let translator = self.db_translator_mut()?;
 
         for obj in translator.idl_class_search(&search)? {
-                if self.command[0].as_str().eq("idlf") {
+            if self.command.eq("idlf") {
                 self.print_idl_object(&obj)?;
             } else {
                 self.print_json_record(&obj)?;
