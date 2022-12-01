@@ -46,7 +46,7 @@ impl EgEvent {
             servertime: None,
             ilsperm: None,
             ilspermloc: 0,
-            success: false,
+            success: textcode.eq("SUCCESS"),
         }
     }
 

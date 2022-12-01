@@ -11,6 +11,7 @@ use eg::db::DatabaseConnection;
 use eg::idl;
 use eg::idldb;
 use eg::init;
+use eg::event;
 use evergreen as eg;
 
 //const PROMPT: &str = "egsh# ";
@@ -60,14 +61,20 @@ Commands
         Same as 'req', but the first parameter sent to the server
         is our previously stored authtoken (see login)
 
-    set <setting> <value>
-        Set a setting value
+    pref set <name> <value>
+        Set a preference value
 
-    get <setting>
-        Get the value of a specific setting.
+    pref get <name>
+        Get the value of a specific preference.
 
-    list
-        List all settings
+    pref list
+        List all preferences
+
+    setting get <setting>
+        Get server setting values.
+        Displays the value best suited to the current context.  This can
+        be impacted by whether the user is logged in and if the user
+        logged in with a workstation.
 
     help
         Show this message
@@ -267,7 +274,7 @@ impl Shell {
         println!("{SEPARATOR}");
         print!("Duration: {:.4}", now.elapsed().as_secs_f32());
         if self.result_count > 0 {
-            print!("; Results {}", self.result_count);
+            print!("; Results: {}", self.result_count);
         }
         println!("");
         println!("{SEPARATOR}");
@@ -300,9 +307,8 @@ impl Shell {
             "req" | "request" => self.send_request(args),
             "reqauth" => self.send_reqauth(args),
             "router" => self.send_router_command(args),
-            "set" => self.set_setting(args),
-            "get" => self.get_setting(args),
-            "list" => self.list_settings(),
+            "pref" => self.handle_prefs(args),
+            "setting" => self.handle_settings(args),
             "help" => {
                 println!("{HELP_TEXT}");
                 Ok(())
@@ -311,40 +317,105 @@ impl Shell {
         }
     }
 
-    fn list_settings(&mut self) -> Result<(), String> {
-        for setting in ["json_print_depth"] {
-            self.get_setting(&[setting])?;
+    fn handle_settings(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
+        let subcom = args[0];
+
+        match subcom {
+            "get" => self.get_setting(args),
+            _ => Err(format!("Unknown 'setting' command: {subcom}")),
+        }
+    }
+
+    fn check_for_event(&mut self, v: &json::JsonValue) -> Result<(), String> {
+        if let Some(evt) = event::EgEvent::parse(v) {
+            if !evt.success() {
+                return Err(format!("Non-SUCCESS event returned: {evt}"));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_setting(&mut self, args: &[&str]) -> Result<(), String> {
+
+        let authtoken = match &self.auth_session {
+            Some(s) => json::from(s.token()),
+            None => json::JsonValue::Null,
+        };
+
+        let setting = args[1];
+        let setarg = json::from(setting);
+
+        let org_id = if args.len() > 2 {
+            let org_str = args[2];
+            json::parse(org_str).or_else(|e|
+                Err(format!("Cannot parse parameter: {org_str} {e}")))?
+        } else {
+            json::JsonValue::Null
+        };
+
+        let params = vec![json::from(vec![setarg]), authtoken, org_id];
+
+        let mut ses = self.ctx().client().session("open-ils.actor");
+        let mut req = ses.request("open-ils.actor.settings.retrieve", &params)?;
+
+        while let Some(resp) = req.recv(DEFAULT_REQUEST_TIMEOUT)? {
+            self.check_for_event(&resp)?;
+            println!("");
+            println!("{setting} => {}", resp["value"]);
+        }
+        println!("");
+
+        Ok(())
+    }
+
+    fn handle_prefs(&mut self,  args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 1)?;
+        let subcom = args[0];
+
+        match subcom {
+            "get" => self.get_pref(args),
+            "set" => self.set_pref(args),
+            "list" => self.list_prefs(),
+            _ => Err(format!("Unknown pref command: {subcom}")),
+        }
+    }
+
+    fn list_prefs(&mut self) -> Result<(), String> {
+        for pref in ["json_print_depth"] {
+            self.get_pref(&["get", pref])?;
         }
         Ok(())
     }
 
-    fn set_setting(&mut self, args: &[&str]) -> Result<(), String> {
-        self.args_min_length(args, 2)?;
-        let setting = args[0];
-        let value = args[1];
+    fn set_pref(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 3)?;
+        let pref = args[1];
+        let value = args[2];
 
-        match setting {
+        match pref {
             "json_print_depth" => {
                 let value_num = value
                     .parse::<u16>()
-                    .or_else(|e| Err(format!("Invalid value for {setting} {e}")))?;
+                    .or_else(|e| Err(format!("Invalid value for {pref} {e}")))?;
                 self.json_print_depth = value_num;
-                self.get_setting(args)
+                self.get_pref(args)
             }
-            _ => Err(format!("No such setting: {setting}"))?,
+            _ => Err(format!("No such pref: {pref}"))?,
         }
     }
 
-    fn get_setting(&mut self, args: &[&str]) -> Result<(), String> {
-        self.args_min_length(args, 1)?;
-        let setting = args[0];
+    fn get_pref(&mut self, args: &[&str]) -> Result<(), String> {
+        self.args_min_length(args, 2)?;
+        let pref = args[1];
 
-        let value = match setting {
+        let value = match pref {
             "json_print_depth" => self.json_print_depth.to_string(),
-            _ => return Err(format!("No such setting: {setting}")),
+            _ => return Err(format!("No such pref: {pref}")),
         };
 
-        println!("{setting} = {value}");
+        println!("{pref} = {value}");
         Ok(())
     }
 
@@ -365,19 +436,12 @@ impl Shell {
     fn handle_login(&mut self, args: &[&str]) -> Result<(), String> {
         self.args_min_length(args, 2)?;
 
-        let username = &args[0];
-        let password = &args[1];
+        let username = args[0];
+        let password = args[1];
+        let login_type = args.get(2).unwrap_or(&"temp");
+        let workstation = if args.len() > 3 { Some(args[3]) } else { None };
 
-        let login_type = match args.len() > 3 {
-            true => &args[3],
-            _ => "temp",
-        };
-        let workstation = match args.len() > 4 {
-            true => Some(args[4]),
-            _ => None,
-        };
-
-        let args = eg::auth::AuthLoginArgs::new(username, password, login_type, workstation);
+        let args = eg::auth::AuthLoginArgs::new(username, password, *login_type, workstation);
 
         match eg::auth::AuthSession::login(self.ctx().client(), &args)? {
             Some(s) => {
@@ -438,9 +502,7 @@ impl Shell {
         let mut ses = self.ctx().client().session(args[0]);
         let mut req = ses.request(args[1], &params)?;
 
-println!("REQ...");
         while let Some(resp) = req.recv(DEFAULT_REQUEST_TIMEOUT)? {
-println!("REQ GOT {resp}");
             self.print_json_record(&resp)?;
         }
 
