@@ -65,8 +65,8 @@ impl DatabaseConnectionBuilder {
         }
 
         if self.password.is_none() {
-            if params.opt_defined("db-password") {
-                self.password = params.opt_str("db-password");
+            if params.opt_defined("db-pass") {
+                self.password = params.opt_str("db-pass");
             }
         }
 
@@ -127,6 +127,12 @@ impl DatabaseConnectionBuilder {
             },
         };
 
+        let mut pass = self.password;
+
+        if pass.is_none() {
+            pass = DatabaseConnectionBuilder::from_env("PGPASS");
+        };
+
         let user = match self.user {
             Some(h) => h,
             None => match DatabaseConnectionBuilder::from_env("PGUSER") {
@@ -156,8 +162,8 @@ impl DatabaseConnectionBuilder {
             host, port, user, database
         );
 
-        if let Some(ref pass) = self.password {
-            dsn += &format!(" password={}", pass);
+        if let Some(ref p) = pass {
+            dsn += &format!(" password={}", p);
         }
 
         if let Some(ref app) = self.application {
@@ -170,7 +176,7 @@ impl DatabaseConnectionBuilder {
             user,
             dsn,
             database,
-            password: self.password,
+            password: pass,
             application: self.application,
             client: None,
         }
@@ -196,7 +202,7 @@ impl DatabaseConnection {
         options.optopt("", "db-host", "Database Host", "DB_HOST");
         options.optopt("", "db-port", "Database Port", "DB_PORT");
         options.optopt("", "db-user", "Database User", "DB_USER");
-        options.optopt("", "db-password", "Database Password", "DB_PASSWORD");
+        options.optopt("", "db-pass", "Database Password", "DB_PASSWORD");
         options.optopt("", "db-name", "Database Name", "DB_NAME");
     }
 
