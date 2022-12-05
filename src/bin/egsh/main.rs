@@ -262,10 +262,13 @@ impl Shell {
             return Ok(());
         }
 
+        // Add all commands to history -- often useful to repeat
+        // commands that failed.
+        self.add_to_history(readline, &user_input);
+
         self.result_count = 0;
         self.dispatch_command(&user_input)?;
         self.print_duration(&now);
-        self.add_to_history(readline, &user_input);
 
         Ok(())
     }
