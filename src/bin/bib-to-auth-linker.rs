@@ -7,6 +7,7 @@ use std::io;
 use std::rc::Rc;
 use std::time::Instant;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use getopts;
 use evergreen as eg;
 use opensrf as osrf;
@@ -16,6 +17,13 @@ use eg::db::DatabaseConnection;
 
 const DEFAULT_STAFF_ACCOUNT: u32 = 4953211; // utiladmin
 const DEFAULT_CONTROL_NUMBER_IDENTIFIER: &str = "DLC";
+
+struct ControlledField {
+    bib_field: String,
+    bib_subfield: String,
+    auth_field: String,
+    auth_subfield: String,
+}
 
 struct BibLinker {
     ctx: init::Context,
@@ -68,7 +76,12 @@ impl BibLinker {
 
         let select = "SELECT id";
         let from = "FROM biblio.record_entry";
-        let where_ = format!("WHERE NOT deleted AND id >= {}", self.start_id);
+
+        let mut where_ = format!("WHERE NOT deleted AND id >= {}", self.start_id);
+        if let Some(end) = self.end_id {
+            where_ += &format!(" AND id < {end}");
+        }
+
         let order = "ORDER BY id";
 
         let sql = format!("{select} {from} {where_} {order}");
@@ -89,7 +102,26 @@ impl BibLinker {
         Ok(list)
     }
 
+    fn get_controlled_fields(&mut self) -> Result<Vec<ControlledField>, String> {
+
+        let search = json::object!{"id":json::object!{"<>":json::JsonValue::Null}};
+        let flesh = json::object! {
+            flesh: 1,
+            flesh_fields: json::object!{
+                acsbf: vec!["authority_field"]
+            }
+        };
+
+        let bib_fields = self.editor.search_with_ops("acsbf", search, flesh)?;
+
+        println!("bib fields are {:?}", bib_fields);
+
+        Err(format!("TEST"))
+    }
+
     fn link_bibs(&mut self) -> Result<(), String> {
+
+        self.get_controlled_fields()?;
 
         for rec_id in self.get_bib_ids()? {
             println!("ID IS {rec_id}");

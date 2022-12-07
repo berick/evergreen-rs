@@ -264,11 +264,20 @@ impl Editor {
         idlclass: &str,
         query: json::JsonValue,
     ) -> Result<Vec<json::JsonValue>, String> {
+        self.search_with_ops(idlclass, query, json::JsonValue::Null)
+    }
+
+    pub fn search_with_ops(
+        &mut self,
+        idlclass: &str,
+        query: json::JsonValue,
+        ops: json::JsonValue, // flesh, etc.
+    ) -> Result<Vec<json::JsonValue>, String> {
         let fmapper = self.get_fieldmapper(idlclass)?;
 
         let method = self.app_method(&format!("direct.{fmapper}.search.atomic"));
 
-        if let Some(jvec) = self.request(&method, vec![query])? {
+        if let Some(jvec) = self.request(&method, vec![query, ops])? {
             if let json::JsonValue::Array(vec) = jvec {
                 return Ok(vec);
             }
