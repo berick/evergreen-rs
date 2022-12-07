@@ -18,6 +18,28 @@ use eg::db::DatabaseConnection;
 const DEFAULT_STAFF_ACCOUNT: u32 = 4953211; // utiladmin
 const DEFAULT_CONTROL_NUMBER_IDENTIFIER: &str = "DLC";
 
+// mapping of authority leader/11 "Subject heading system/thesaurus"
+// to the matching bib record indicator
+const AUTH_TO_BIB_IND2: &[(&str, &str)] = &[
+    ("a", "0"), // Library of Congress Subject Headings (ADULT)
+    ("b", "1"), // Library of Congress Subject Headings (JUVENILE)
+    ("c", "2"), // Medical Subject Headings
+    ("d", "3"), // National Agricultural Library Subject Authority File
+    ("n", "4"), // Source not specified
+    ("k", "5"), // Canadian Subject Headings
+    ("v", "6"), // Répertoire de vedettes-matière
+    ("z", "7"), // Source specified in subfield $2 / Other
+];
+
+// Produces a new 6XX ind2 value for values found in subfield $2 when the
+// original ind2 value is 7 ("Source specified in subfield $2").
+const REMAP_BIB_SF2_TO_IND2: &[(&str, &str)] = &[
+    ("lcsh", "0"),
+    ("mesh", "2"),
+    ("nal",  "3"),
+    ("rvm",  "6"),
+];
+
 #[derive(Debug)]
 struct ControlledField {
     bib_tag: String,
@@ -142,7 +164,7 @@ impl BibLinker {
 
             let sf_string = bib_field["authority_field"]["sf_list"].as_str().unwrap();
             let mut subfields: Vec<String> = Vec::new();
-            
+
             for sf in sf_string.split("") {
 
                 if bib_tag[..1].ne("6") && scrub_subfields1.contains(&sf) {
