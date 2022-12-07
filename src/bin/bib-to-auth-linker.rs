@@ -40,11 +40,19 @@ const REMAP_BIB_SF2_TO_IND2: &[(&str, &str)] = &[
     ("rvm",  "6"),
 ];
 
+/// Controlled bib field + subfield along with the authority
+/// field that controls it.
 #[derive(Debug)]
 struct ControlledField {
     bib_tag: String,
     auth_tag: String,
     subfield: String,
+}
+
+#[derive(Debug)]
+struct AuthLeader {
+	auth_id: i64,
+	value: String,
 }
 
 struct BibLinker {
@@ -94,6 +102,7 @@ impl BibLinker {
         &self.db
     }
 
+    /// Returns the list of bib record IDs we plan to process.
     fn get_bib_ids(&self) -> Result<Vec<i64>, String> {
 
         let select = "SELECT id";
@@ -124,6 +133,7 @@ impl BibLinker {
         Ok(list)
     }
 
+    /// Collect the list of controlled fields from the database.
     fn get_controlled_fields(&mut self) -> Result<Vec<ControlledField>, String> {
 
         let search = json::object! {"id": {"<>": json::JsonValue::Null}};
@@ -140,11 +150,11 @@ impl BibLinker {
         let linkable_tag_prefixes = vec!["1", "6", "7", "8"];
 
         // Skip these for non-6XX fields
-        let scrub_subfields1 = vec!["v", "x", "y", "z"];
+        let scrub_subfields1 = ["v", "x", "y", "z"];
 
         // Skip these for scrub_tags2 fields
-        let scrub_subfields2 = vec!["m", "o", "r", "s"];
-        let scrub_tags2 = vec!["130", "600", "610", "630", "700", "710", "730", "830"];
+        let scrub_subfields2 = ["m", "o", "r", "s"];
+        let scrub_tags2 = ["130", "600", "610", "630", "700", "710", "730", "830"];
 
         let mut controlled_fields: Vec<ControlledField> = Vec::new();
 
@@ -155,14 +165,16 @@ impl BibLinker {
                 continue;
             }
 
-            let auth_tag = bib_field["authority_field"]["tag"].as_str().unwrap();
+            let authority_field = &bib_field["authority_field"];
+
+            let auth_tag = authority_field["tag"].as_str().unwrap();
 
             // Ignore authority 18X fields
             if auth_tag[..2].eq("18") {
                 continue;
             }
 
-            let sf_string = bib_field["authority_field"]["sf_list"].as_str().unwrap();
+            let sf_string = authority_field["sf_list"].as_str().unwrap();
             let mut subfields: Vec<String> = Vec::new();
 
             for sf in sf_string.split("") {
@@ -190,6 +202,55 @@ impl BibLinker {
         }
 
         Ok(controlled_fields)
+    }
+
+	// Fetch leader/008 values for authority records.  Filter out any whose
+	// 008 14 or 15 field are not appropriate for the requested bib tag.
+	// https://www.loc.gov/marc/authority/ad008.html
+	fn authority_leaders_008_14_15(&mut self,
+        bib_tag: &str, auth_ids: Vec<i64>) -> Result<Vec<AuthLeader>, String> {
+
+        let mut leaders: Vec<AuthLeader> = Vec::new();
+
+        let params = json::object!{tag: "008", record: auth_ids.clone()};
+        let maybe_leaders = self.editor.search("afr", params)?;
+
+        // Sort the auth_leaders list to match the order of the original
+        // list of auth_ids, since they are prioritized by heading
+        // matchy-ness
+        for auth_id in auth_ids {
+            for leader in maybe_leaders.iter() {
+                if leader["record"].as_i64().unwrap() == auth_id {
+                    leaders.push(AuthLeader {
+                        auth_id: leader["record"].as_i64().unwrap(),
+                        value: leader["value"].as_str().unwrap().to_string(),
+                    });
+                    break;
+                }
+            }
+        }
+
+        let index = match bib_tag {
+            t if t[..2].eq("17") => 14, // author/name record
+            t if t[..1].eq("6") => 15,  // subject record
+            _ => return Ok(leaders),    // no additional filtering needed
+        };
+
+        let mut keepers: Vec<AuthLeader> = Vec::new();
+
+        for leader in leaders {
+            if &leader.value[index..(index + 1)] == "a" {
+                keepers.push(leader);
+                continue;
+            }
+
+            log::info!(
+                "Skipping authority record {} on bib {bib_tag} match; 008/#14|#15 not appropriate",
+                leader.auth_id
+            );
+        }
+
+        Ok(keepers)
     }
 
     fn link_bibs(&mut self) -> Result<(), String> {
