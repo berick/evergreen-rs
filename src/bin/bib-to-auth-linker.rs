@@ -18,11 +18,11 @@ use eg::db::DatabaseConnection;
 const DEFAULT_STAFF_ACCOUNT: u32 = 4953211; // utiladmin
 const DEFAULT_CONTROL_NUMBER_IDENTIFIER: &str = "DLC";
 
+#[derive(Debug)]
 struct ControlledField {
-    bib_field: String,
-    bib_subfield: String,
-    auth_field: String,
-    auth_subfield: String,
+    bib_tag: String,
+    auth_tag: String,
+    subfield: String,
 }
 
 struct BibLinker {
@@ -104,7 +104,8 @@ impl BibLinker {
 
     fn get_controlled_fields(&mut self) -> Result<Vec<ControlledField>, String> {
 
-        let search = json::object!{"id":json::object!{"<>":json::JsonValue::Null}};
+        let search = json::object! {"id": {"<>": json::JsonValue::Null}};
+
         let flesh = json::object! {
             flesh: 1,
             flesh_fields: json::object!{
@@ -114,18 +115,70 @@ impl BibLinker {
 
         let bib_fields = self.editor.search_with_ops("acsbf", search, flesh)?;
 
-        println!("bib fields are {:?}", bib_fields);
+        let linkable_tag_prefixes = vec!["1", "6", "7", "8"];
 
-        Err(format!("TEST"))
+        // Skip these for non-6XX fields
+        let scrub_subfields1 = vec!["v", "x", "y", "z"];
+
+        // Skip these for scrub_tags2 fields
+        let scrub_subfields2 = vec!["m", "o", "r", "s"];
+        let scrub_tags2 = vec!["130", "600", "610", "630", "700", "710", "730", "830"];
+
+        let mut controlled_fields: Vec<ControlledField> = Vec::new();
+
+        for bib_field in bib_fields {
+            let bib_tag = bib_field["tag"].as_str().unwrap();
+
+            if !linkable_tag_prefixes.contains(&&bib_tag[..1]) {
+                continue;
+            }
+
+            let auth_tag = bib_field["authority_field"]["tag"].as_str().unwrap();
+
+            // Ignore authority 18X fields
+            if auth_tag[..2].eq("18") {
+                continue;
+            }
+
+            let sf_string = bib_field["authority_field"]["sf_list"].as_str().unwrap();
+            let mut subfields: Vec<String> = Vec::new();
+            
+            for sf in sf_string.split("") {
+
+                if bib_tag[..1].ne("6") && scrub_subfields1.contains(&sf) {
+                    continue;
+                }
+
+                if scrub_tags2.contains(&bib_tag) && scrub_subfields2.contains(&sf) {
+                    continue;
+                }
+
+                subfields.push(sf.to_string());
+            }
+
+            for sf in subfields {
+                controlled_fields.push(
+                    ControlledField {
+                        bib_tag: bib_tag.to_string(),
+                        auth_tag: auth_tag.to_string(),
+                        subfield: sf.to_string()
+                    }
+                );
+            }
+        }
+
+        Ok(controlled_fields)
     }
 
     fn link_bibs(&mut self) -> Result<(), String> {
 
-        self.get_controlled_fields()?;
+        let control_fields = self.get_controlled_fields()?;
 
         for rec_id in self.get_bib_ids()? {
             println!("ID IS {rec_id}");
         }
+
+        println!("FIELDS: {:?}", control_fields);
 
         Ok(())
     }
