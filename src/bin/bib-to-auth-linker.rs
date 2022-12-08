@@ -331,6 +331,29 @@ impl BibLinker {
         Ok(None)
     }
 
+    // Returns true if the thesaurus controlling the bib field is "fast".
+    fn is_fast_heading(&self, bib_field: &marcutil::Field) -> bool {
+        let tag = &bib_field.tag;
+
+        // Looking specifically for bib tags matching 65[015]
+        if &tag[..2] != "65" {
+            return false;
+        }
+
+        match &tag[2..3] {
+            "0" | "1" | "5" => {}, // keep going
+            _ => return false,
+        }
+
+        if bib_field.ind2 == '7' { // Field controlled by "other"
+            if let Some(sf) = bib_field.get_subfields("2").get(0) {
+                return &sf.content == "fast";
+            }
+        }
+
+        false
+    }
+
     fn link_bibs(&mut self) -> Result<(), String> {
 
         let control_fields = self.get_controlled_fields()?;
