@@ -20,24 +20,24 @@ const DEFAULT_CONTROL_NUMBER_IDENTIFIER: &str = "DLC";
 
 // mapping of authority leader/11 "Subject heading system/thesaurus"
 // to the matching bib record indicator
-const AUTH_TO_BIB_IND2: &[(&str, &str)] = &[
-    ("a", "0"), // Library of Congress Subject Headings (ADULT)
-    ("b", "1"), // Library of Congress Subject Headings (JUVENILE)
-    ("c", "2"), // Medical Subject Headings
-    ("d", "3"), // National Agricultural Library Subject Authority File
-    ("n", "4"), // Source not specified
-    ("k", "5"), // Canadian Subject Headings
-    ("v", "6"), // Répertoire de vedettes-matière
-    ("z", "7"), // Source specified in subfield $2 / Other
+const AUTH_TO_BIB_IND2: &[(&str, char)] = &[
+    ("a", '0'), // Library of Congress Subject Headings (ADULT)
+    ("b", '1'), // Library of Congress Subject Headings (JUVENILE)
+    ("c", '2'), // Medical Subject Headings
+    ("d", '3'), // National Agricultural Library Subject Authority File
+    ("n", '4'), // Source not specified
+    ("k", '5'), // Canadian Subject Headings
+    ("v", '6'), // Répertoire de vedettes-matière
+    ("z", '7'), // Source specified in subfield $2 / Other
 ];
 
 // Produces a new 6XX ind2 value for values found in subfield $2 when the
 // original ind2 value is 7 ("Source specified in subfield $2").
-const REMAP_BIB_SF2_TO_IND2: &[(&str, &str)] = &[
-    ("lcsh", "0"),
-    ("mesh", "2"),
-    ("nal",  "3"),
-    ("rvm",  "6"),
+const REMAP_BIB_SF2_TO_IND2: &[(&str, char)] = &[
+    ("lcsh", '0'),
+    ("mesh", '2'),
+    ("nal",  '3'),
+    ("rvm",  '6'),
 ];
 
 /// Controlled bib field + subfield along with the authority
@@ -49,7 +49,7 @@ struct ControlledField {
     subfield: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AuthLeader {
 	auth_id: i64,
 	value: String,
@@ -251,6 +251,84 @@ impl BibLinker {
         }
 
         Ok(keepers)
+    }
+
+	// Given a set of authority record leaders and a controlled bib field,
+	// returns the ID of the first authority record in the set that
+	// matches the thesaurus spec of the bib record.
+	fn find_matching_auth_for_thesaurus(
+        &self,
+        bib_field: &marcutil::Field,
+        auth_leaders: Vec<AuthLeader>
+    ) -> Result<Option<i64>, String> {
+
+        let mut bib_ind2 = bib_field.ind2;
+        let mut is_local = false;
+
+        if bib_ind2 == '7' {
+            // subject thesaurus code is embedded in the bib field subfield 2
+            is_local = true;
+
+            let thesaurus = match bib_field.get_subfields("2").get(0) {
+                Some(sf) => &sf.content,
+                None => "",
+            };
+
+            log::debug!("Found local thesaurus value '{thesaurus}'");
+
+			// if we have no special remapping value for the found thesaurus,
+			// fall back to ind2 => 7=Other.
+            bib_ind2 = match REMAP_BIB_SF2_TO_IND2
+                .iter().filter(|(k, _)| k == &thesaurus).next() {
+                Some((k, v)) => *v,
+                None => '7',
+            };
+
+			log::debug!(
+                "Local thesaurus '{thesaurus}' remapped to ind2 value '{bib_ind2}'");
+
+        } else if bib_ind2 == '4' {
+
+            is_local = true;
+            bib_ind2 = '7';
+            log::debug!("Local thesaurus ind2=4 mapped to ind2=7");
+        }
+
+        let mut authz_leader: Option<AuthLeader> = None;
+
+        for leader in auth_leaders {
+            if leader.value.eq("") || leader.value.len() < 12 {
+                continue;
+            }
+
+            let thesaurus = &leader.value[11..12];
+
+            if thesaurus == "z" {
+                // Note for later that we encountered an authority record
+                // whose thesaurus values is z=Other.
+                authz_leader = Some(leader.clone());
+            }
+
+            if let Some((_, ind)) = AUTH_TO_BIB_IND2
+                .iter().filter(|(t, _)| t == &thesaurus).next() {
+                if ind == &bib_ind2 {
+                    log::debug!(
+                        "Found a match on thesaurus '{thesaurus}' for auth {}",
+                        leader.auth_id
+                    );
+
+                    return Ok(Some(leader.auth_id))
+                }
+            }
+        }
+
+        if is_local {
+            if let Some(ldr) = authz_leader {
+                return Ok(Some(ldr.auth_id));
+            }
+        }
+
+        Ok(None)
     }
 
     fn link_bibs(&mut self) -> Result<(), String> {
