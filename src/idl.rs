@@ -540,6 +540,39 @@ impl Parser {
 
         array
     }
+
+    /// Returns true if the provided value is shaped like an IDL-blessed
+    /// object and has a valid IDL class name.
+    pub fn is_idl_object(&self, obj: &json::JsonValue) -> bool {
+        if obj.is_object() {
+            if let Some(cname) = obj[CLASSNAME_KEY].as_str() {
+                if self.classes.get(cname).is_some() {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn get_pkey_value(&self, obj: &json::JsonValue) -> Option<String> {
+
+        if !self.is_idl_object(obj) {
+            return None;
+        }
+
+        // these data known good from above is_idl_object check
+        let classname = obj[CLASSNAME_KEY].as_str().unwrap();
+        let idlclass = self.classes.get(classname).unwrap();
+
+        if let Some(pkey_field) = idlclass.pkey() {
+            if let Some(pkey_value) = obj[pkey_field].as_str() {
+                return Some(pkey_value.to_string());
+            }
+        }
+
+        None
+    }
 }
 
 impl DataSerializer for Parser {

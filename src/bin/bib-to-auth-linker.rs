@@ -280,7 +280,7 @@ impl BibLinker {
 			// fall back to ind2 => 7=Other.
             bib_ind2 = match REMAP_BIB_SF2_TO_IND2
                 .iter().filter(|(k, _)| k == &thesaurus).next() {
-                Some((k, v)) => *v,
+                Some((_, v)) => *v,
                 None => '7',
             };
 
@@ -354,15 +354,42 @@ impl BibLinker {
         false
     }
 
+    fn update_bib_record(
+        &mut self,
+        bre: &mut json::JsonValue,
+        record: &marcutil::Record
+    ) -> Result<(), String> {
+
+        let xml = record.to_xml()?;
+        let xml = marcutil::xml::escape_xml(&xml);
+        let bre_id = bre["id"].as_i64().unwrap();
+
+        if bre["marc"].as_str().unwrap() == xml {
+            log::debug!("Skipping update of record {bre_id} -- no changes made");
+            return Ok(())
+        }
+
+        log::info!("Applying updates to bib record {bre_id}");
+
+        bre["marc"] = json::from(xml);
+        bre["edit_date"] = json::from("now");
+        bre["editor"] = json::from(self.staff_account);
+
+        self.editor.update(&bre)?;
+
+        Ok(())
+    }
+
     fn link_bibs(&mut self) -> Result<(), String> {
 
         let control_fields = self.get_controlled_fields()?;
 
         for rec_id in self.get_bib_ids()? {
-            println!("ID IS {rec_id}");
+            print!("{rec_id} ");
         }
+        println!("");
 
-        println!("FIELDS: {:?}", control_fields);
+        //println!("FIELDS: {:?}", control_fields);
 
         Ok(())
     }

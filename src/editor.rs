@@ -207,6 +207,32 @@ impl Editor {
         self.request(method, params)
     }
 
+    fn logtag(&self) -> String {
+        format!("editor[{}|{}]",
+            match self.has_xact_id() { true => "1", _ => "0" },
+            match self.requestor() {Some(r) => r["id"].as_str().unwrap(), _ => "0" }
+        )
+    }
+
+    fn args_to_string(&self, params: &ApiParams) -> Result<String, String> {
+        let mut buf = String::new();
+        for p in params.params().iter() {
+
+            if self.idl.is_idl_object(p) {
+
+                if let Some(pkv) = self.idl.get_pkey_value(p) {
+                    buf.push_str(&pkv);
+                } else {
+                    buf.push_str("<new object>");
+                }
+            } else {
+                buf.push_str(&p.dump());
+            }
+        }
+
+        Ok(buf)
+    }
+
     /// Send an API request to our service/worker with parameters.
     ///
     /// All requests return at most a single response.
@@ -214,9 +240,19 @@ impl Editor {
     where
         T: Into<ApiParams>,
     {
-        // TODO log the request
+        let params: ApiParams = params.into();
 
-        let mut req = self.session().request(method, params)?;
+        log::info!("{} request {} {}", self.logtag(), method, self.args_to_string(&params)?);
+
+        let mut req = match self.session().request(method, params) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Request failed: {e}. Performing rollback/disconnect as needed");
+                self.rollback()?;
+                Err(e)?
+            }
+        };
+
         req.recv(self.timeout)
     }
 
@@ -284,5 +320,32 @@ impl Editor {
         }
 
         Err(format!("Unexpected response to method {method}"))
+    }
+
+    pub fn update(
+        &mut self,
+        object: &json::JsonValue,
+    ) -> Result<(), String> {
+
+        if !self.has_xact_id() {
+            Err(format!("Transaction required for UPDATE"))?;
+        }
+
+        let idlclass = match object[idl::CLASSNAME_KEY].as_str() {
+            Some(c) => c,
+            None => Err(format!("update() called on non-IDL object"))?,
+        };
+
+        let fmapper = self.get_fieldmapper(idlclass)?;
+
+        let method = self.app_method(&format!("direct.{fmapper}.update"));
+
+        if let Some(resp) = self.request(&method, object)? {
+            log::debug!("Update call returned {:?}", resp);
+        } else {
+            Err(format!("Update returned no response"))?;
+        }
+
+        Ok(())
     }
 }
