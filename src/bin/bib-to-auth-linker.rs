@@ -380,6 +380,54 @@ impl BibLinker {
         Ok(())
     }
 
+    fn find_potential_auth_matches(&self,
+        controlled_fields: &Vec<ControlledField>,
+        bib_field: &marcutil::Field
+    ) -> Result<Vec<i64>, String> {
+
+        let bib_tag = &bib_field.tag;
+        let mut auth_ids: Vec<i64> = Vec::new();
+
+        let controlled: Vec<&ControlledField> =
+            controlled_fields.iter().filter(|cf| &cf.bib_tag == bib_tag).collect();
+
+        if controlled.len() == 0 {
+            return Ok(auth_ids);
+        }
+
+        // Assume each bib field is controlled by exactly one authority field.
+        let auth_tag = &controlled[0].auth_tag;
+
+        // [ (subfield, value), ... ]
+        let mut searches: Vec<(&str, &str)> = Vec::new();
+
+        for bib_sf in &bib_field.subfields {
+            if let Some(controller) =
+                controlled.iter().filter(|cf| &cf.subfield == &bib_sf.code).next() {
+                searches.push((&bib_sf.code, &bib_sf.content));
+            }
+        }
+
+		// KCLS JBAS-1470
+		// Find all authority records whose simple_heading is (essentially)
+		// a left-anchored substring match of the normalized bib heading.
+		// Sort by longest to shortest match.  Include the shorter matches
+		// because a longer match may later be discarded, e.g. because it
+		// uses a different thesaurus.
+
+		// We don't exactly want a substring match, more like a sub-tag
+		// match.  A straight substring match on the heading is both slow
+		// (at the DB level) and could result in partial value matches, like
+		// 'smith' vs. 'smithsonian', which we don't want.
+
+		for search in searches.iter() {
+            let mut heading = auth_tag.to_string();
+        }
+
+        Ok(vec![])
+
+    }
+
     fn link_bibs(&mut self) -> Result<(), String> {
 
         let control_fields = self.get_controlled_fields()?;
