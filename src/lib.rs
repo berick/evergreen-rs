@@ -7,3 +7,4 @@ pub mod event;
 pub mod idl;
 pub mod idldb;
 pub mod init;
+pub mod norm;
