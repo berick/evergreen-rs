@@ -492,7 +492,7 @@ impl BibLinker {
             }
 
             let xml = record["marc"].as_str().unwrap();
-            let record = match marcutil::Record::from_xml(xml).next() {
+            let mut record = match marcutil::Record::from_xml(xml).next() {
                 Some(r) => r,
                 None => {
                     log::error!("MARC parsing returned no usable record for {rec_id}");
@@ -500,8 +500,44 @@ impl BibLinker {
                 }
             };
 
-            //println!("rec {}", record.get_values("245", "a").get(0).unwrap());
+            if let Err(e) = self.link_one_bib(rec_id, &control_fields, &mut record) {
+                log::error!("Error processing bib record {rec_id}: {e}");
+            }
         }
+
+        Ok(())
+    }
+
+    fn link_one_bib(
+        &mut self,
+        rec_id: i64,
+        control_fields: &Vec<ControlledField>,
+        record: &mut marcutil::Record
+    ) -> Result<(), String> {
+
+        log::info!("Processing record {rec_id}");
+
+        for cfield in control_fields.iter() {
+            for bib_field in record.get_fields(&cfield.bib_tag) {
+
+                let sf0 = match bib_field.get_subfields("0").first() {
+                    Some(sf) => &sf.content,
+                    None => ""
+                };
+
+                let is_fast_heading = self.is_fast_heading(&bib_field);
+
+                if sf0.contains(")fst") && is_fast_heading {
+                    log::debug!(
+                        "Ignoring FAST heading on rec={} and tag={} $0={}",
+                        rec_id, cfield.bib_tag, sf0
+                    );
+
+                    continue;
+                }
+            }
+        }
+
 
         Ok(())
     }
