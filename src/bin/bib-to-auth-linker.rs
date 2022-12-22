@@ -13,6 +13,7 @@ use evergreen as eg;
 use opensrf as osrf;
 use eg::idl;
 use eg::init;
+use eg::norm::Normalizer;
 use eg::db::DatabaseConnection;
 
 const DEFAULT_STAFF_ACCOUNT: u32 = 4953211; // utiladmin
@@ -62,6 +63,7 @@ struct BibLinker {
     staff_account: u32,
     start_id: i64,
     end_id: Option<i64>,
+    normalizer: Normalizer,
 }
 
 impl BibLinker {
@@ -91,6 +93,7 @@ impl BibLinker {
             staff_account,
             start_id: 1, // TODO
             end_id: None, // TODO
+            normalizer: Normalizer::new(),
         })
     }
 
@@ -380,7 +383,8 @@ impl BibLinker {
         Ok(())
     }
 
-    fn find_potential_auth_matches(&self,
+    fn find_potential_auth_matches(
+        &mut self,
         controlled_fields: &Vec<ControlledField>,
         bib_field: &marcutil::Field
     ) -> Result<Vec<i64>, String> {
@@ -408,24 +412,64 @@ impl BibLinker {
             }
         }
 
-		// KCLS JBAS-1470
-		// Find all authority records whose simple_heading is (essentially)
-		// a left-anchored substring match of the normalized bib heading.
-		// Sort by longest to shortest match.  Include the shorter matches
-		// because a longer match may later be discarded, e.g. because it
-		// uses a different thesaurus.
+        self.find_potential_auth_matches_kcls(auth_tag, &mut searches)
+    }
 
-		// We don't exactly want a substring match, more like a sub-tag
-		// match.  A straight substring match on the heading is both slow
-		// (at the DB level) and could result in partial value matches, like
-		// 'smith' vs. 'smithsonian', which we don't want.
 
-		for search in searches.iter() {
+    // KCLS JBAS-1470
+    // Find all authority records whose simple_heading is (essentially)
+    // a left-anchored substring match of the normalized bib heading.
+    // Sort by longest to shortest match.  Include the shorter matches
+    // because a longer match may later be discarded, e.g. because it
+    // uses a different thesaurus.
+
+    // We don't exactly want a substring match, more like a sub-tag
+    // match.  A straight substring match on the heading is both slow
+    // (at the DB level) and could result in partial value matches, like
+    // 'smith' vs. 'smithsonian', which we don't want.
+    fn find_potential_auth_matches_kcls(
+        &mut self,
+        auth_tag: &str,
+        searches: &mut Vec<(&str, &str)>
+    ) -> Result<Vec<i64>, String> {
+
+        let mut auth_ids: Vec<i64> = Vec::new();
+
+        loop {
+
             let mut heading = auth_tag.to_string();
+
+            for s in searches.iter() { // s.0=subfield; s.1=subfield-value
+                heading += &format!(" {} {}", s.0, self.normalizer.naco_normalize(s.1));
+            }
+
+            log::debug!("Sub-heading search for: {heading}");
+
+            let search = json::object! {
+                "simple_heading": json::from(heading),
+                "deleted": json::JsonValue::Null,
+            };
+
+            // TODO idlist searches
+            let recs = match self.editor.search("are", search) {
+                Ok(r) => r,
+                Err(e) => {
+                    // Don't let a cstore query failure kill the whole batch.
+                    log::error!("Skipping bib field on query failure: {e}");
+                    return Ok(vec![]);
+                }
+            };
+
+            for rec in recs {
+                auth_ids.push(rec["id"].as_i64().unwrap());
+            }
+
+            if searches.pop().is_none() {
+                break;
+            }
         }
 
-        Ok(vec![])
-
+        Ok(auth_ids)
     }
 
     fn link_bibs(&mut self) -> Result<(), String> {
