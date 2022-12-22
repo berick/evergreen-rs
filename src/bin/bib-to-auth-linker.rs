@@ -477,11 +477,31 @@ impl BibLinker {
         let control_fields = self.get_controlled_fields()?;
 
         for rec_id in self.get_bib_ids()? {
-            print!("{rec_id} ");
-        }
-        println!("");
+            log::info!("Processing record {rec_id}");
 
-        //println!("FIELDS: {:?}", control_fields);
+            let record = match self.editor.retrieve("bre", rec_id)? {
+                Some(r) => r,
+                None => {
+                    log::warn!("No such bib record: {rec_id}");
+                    continue;
+                }
+            };
+
+            if record["deleted"].as_str().unwrap() == "t" {
+                continue;
+            }
+
+            let xml = record["marc"].as_str().unwrap();
+            let record = match marcutil::Record::from_xml(xml).next() {
+                Some(r) => r,
+                None => {
+                    log::error!("MARC parsing returned no usable record for {rec_id}");
+                    continue;
+                }
+            };
+
+            //println!("rec {}", record.get_values("245", "a").get(0).unwrap());
+        }
 
         Ok(())
     }
