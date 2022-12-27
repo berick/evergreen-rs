@@ -86,13 +86,29 @@ impl BibLinker {
             Err(e) => Err(format!("Error parsing staff-account value: {e}"))?,
         };
 
+        let start_id = match params.opt_str("start-id") {
+            Some(id) => match id.parse::<i64>() {
+                Ok(i) => i,
+                Err(e) => Err(format!("Error parsing --start-id: {e}"))?,
+            },
+            None => 1,
+        };
+
+        let end_id = match params.opt_str("end-id") {
+            Some(id) => match id.parse::<i64>() {
+                Ok(i) => Some(i),
+                Err(e) => Err(format!("Error parsing --end-id: {e}"))?,
+            },
+            None => None
+        };
+
         Ok(BibLinker {
             ctx,
             db,
             editor,
             staff_account,
-            start_id: 1, // TODO
-            end_id: None, // TODO
+            start_id,
+            end_id,
             normalizer: Normalizer::new(),
         })
     }
@@ -447,7 +463,7 @@ impl BibLinker {
 
             let search = json::object! {
                 "simple_heading": json::from(heading),
-                "deleted": json::JsonValue::Null,
+                "deleted": json::from("f"),
             };
 
             // TODO idlist searches
@@ -517,7 +533,16 @@ impl BibLinker {
 
         log::info!("Processing record {rec_id}");
 
+        let mut seen_bib_tags: HashMap<&str, bool> = HashMap::new();
+
         for cfield in control_fields.iter() {
+
+            if seen_bib_tags.contains_key(cfield.bib_tag.as_str()) {
+                continue;
+            }
+
+            seen_bib_tags.insert(&cfield.bib_tag, true);
+
             for bib_field in record.get_fields(&cfield.bib_tag) {
 
                 let sf0 = match bib_field.get_subfields("0").first() {
@@ -535,6 +560,11 @@ impl BibLinker {
 
                     continue;
                 }
+
+                let validates =
+                    self.find_potential_auth_matches(&control_fields, &bib_field)?;
+
+                println!("{} {} {:?} ", rec_id, bib_field.tag, validates);
             }
         }
 
@@ -548,6 +578,8 @@ fn main() -> Result<(), String> {
     let mut opts = getopts::Options::new();
 
     opts.optopt("", "staff-account", "Staff Account ID", "STAFF_ACCOUNT_ID");
+    opts.optopt("", "start-id", "Start ID", "START_ID");
+    opts.optopt("", "end-id", "End ID", "END_ID");
 
     DatabaseConnection::append_options(&mut opts);
 

@@ -10,6 +10,7 @@ const REGEX_PUNCTUATION: &str =
 pub struct Normalizer {
     regex_control_codes: Regex,
     regex_puncutation: Regex,
+    regex_multi_spaces: Regex,
 }
 
 impl Normalizer {
@@ -17,6 +18,7 @@ impl Normalizer {
         Normalizer {
             regex_control_codes: Regex::new(REGEX_CONTROL_CODES).unwrap(),
             regex_puncutation: Regex::new(REGEX_PUNCTUATION).unwrap(),
+            regex_multi_spaces: Regex::new("\\s+").unwrap(),
         }
     }
 
@@ -103,8 +105,10 @@ impl Normalizer {
         $str =~ tr/\x{0660}-\x{0669}\x{06F0}-\x{06F9}\x{07C0}-\x{07C9}\x{0966}-\x{096F}\x{09E6}-\x{09EF}\x{0A66}-\x{0A6F}\x{0AE6}-\x{0AEF}\x{0B66}-\x{0B6F}\x{0BE6}-\x{0BEF}\x{0C66}-\x{0C6F}\x{0CE6}-\x{0CEF}\x{0D66}-\x{0D6F}\x{0E50}-\x{0E59}\x{0ED0}-\x{0ED9}\x{0F20}-\x{0F29}\x{1040}-\x{1049}\x{1090}-\x{1099}\x{17E0}-\x{17E9}\x{1810}-\x{1819}\x{1946}-\x{194F}\x{19D0}-\x{19D9}\x{1A80}-\x{1A89}\x{1A90}-\x{1A99}\x{1B50}-\x{1B59}\x{1BB0}-\x{1BB9}\x{1C40}-\x{1C49}\x{1C50}-\x{1C59}\x{A620}-\x{A629}\x{A8D0}-\x{A8D9}\x{A900}-\x{A909}\x{A9D0}-\x{A9D9}\x{AA50}-\x{AA59}\x{ABF0}-\x{ABF9}\x{FF10}-\x{FF19}/0-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-90-9/;
         */
 
+        value = self.regex_multi_spaces.replace_all(&value, " ").into_owned();
+
         // leaing / trailing spaces
-        value.trim().to_string()
+        value.trim().to_lowercase()
     }
 }
 
