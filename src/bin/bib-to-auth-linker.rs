@@ -52,8 +52,8 @@ struct ControlledField {
 
 #[derive(Debug, Clone)]
 struct AuthLeader {
-	auth_id: i64,
-	value: String,
+    auth_id: i64,
+    value: String,
 }
 
 struct BibLinker {
@@ -64,6 +64,7 @@ struct BibLinker {
     start_id: i64,
     end_id: Option<i64>,
     normalizer: Normalizer,
+    verbose: bool,
 }
 
 impl BibLinker {
@@ -102,6 +103,8 @@ impl BibLinker {
             None => None
         };
 
+        let verbose = params.opt_present("verbose");
+
         Ok(BibLinker {
             ctx,
             db,
@@ -109,6 +112,7 @@ impl BibLinker {
             staff_account,
             start_id,
             end_id,
+            verbose,
             normalizer: Normalizer::new(),
         })
     }
@@ -223,10 +227,10 @@ impl BibLinker {
         Ok(controlled_fields)
     }
 
-	// Fetch leader/008 values for authority records.  Filter out any whose
-	// 008 14 or 15 field are not appropriate for the requested bib tag.
-	// https://www.loc.gov/marc/authority/ad008.html
-	fn authority_leaders_008_14_15(&mut self,
+    // Fetch leader/008 values for authority records.  Filter out any whose
+    // 008 14 or 15 field are not appropriate for the requested bib tag.
+    // https://www.loc.gov/marc/authority/ad008.html
+    fn authority_leaders_008_14_15(&mut self,
         bib_tag: &str, auth_ids: Vec<i64>) -> Result<Vec<AuthLeader>, String> {
 
         let mut leaders: Vec<AuthLeader> = Vec::new();
@@ -272,10 +276,10 @@ impl BibLinker {
         Ok(keepers)
     }
 
-	// Given a set of authority record leaders and a controlled bib field,
-	// returns the ID of the first authority record in the set that
-	// matches the thesaurus spec of the bib record.
-	fn find_matching_auth_for_thesaurus(
+    // Given a set of authority record leaders and a controlled bib field,
+    // returns the ID of the first authority record in the set that
+    // matches the thesaurus spec of the bib record.
+    fn find_matching_auth_for_thesaurus(
         &self,
         bib_field: &marcutil::Field,
         auth_leaders: Vec<AuthLeader>
@@ -295,15 +299,15 @@ impl BibLinker {
 
             log::debug!("Found local thesaurus value '{thesaurus}'");
 
-			// if we have no special remapping value for the found thesaurus,
-			// fall back to ind2 => 7=Other.
+            // if we have no special remapping value for the found thesaurus,
+            // fall back to ind2 => 7=Other.
             bib_ind2 = match REMAP_BIB_SF2_TO_IND2
                 .iter().filter(|(k, _)| k == &thesaurus).next() {
                 Some((_, v)) => *v,
                 None => '7',
             };
 
-			log::debug!(
+            log::debug!(
                 "Local thesaurus '{thesaurus}' remapped to ind2 value '{bib_ind2}'");
 
         } else if bib_ind2 == '4' {
@@ -533,6 +537,8 @@ impl BibLinker {
 
         log::info!("Processing record {rec_id}");
 
+        if self.verbose { println!("Processing bib record {rec_id}"); }
+
         let mut seen_bib_tags: HashMap<&str, bool> = HashMap::new();
 
         for cfield in control_fields.iter() {
@@ -543,11 +549,12 @@ impl BibLinker {
 
             seen_bib_tags.insert(&cfield.bib_tag, true);
 
-            for bib_field in record.get_fields(&cfield.bib_tag) {
+            for bib_field in record.get_fields_mut(&cfield.bib_tag) {
+                let bib_tag = bib_field.tag.to_string();
 
                 let sf0 = match bib_field.get_subfields("0").first() {
-                    Some(sf) => &sf.content,
-                    None => ""
+                    Some(sf) => sf.content.to_string(),
+                    None => "".to_string()
                 };
 
                 let is_fast_heading = self.is_fast_heading(&bib_field);
@@ -555,19 +562,61 @@ impl BibLinker {
                 if sf0.contains(")fst") && is_fast_heading {
                     log::debug!(
                         "Ignoring FAST heading on rec={} and tag={} $0={}",
-                        rec_id, cfield.bib_tag, sf0
+                        rec_id, bib_tag, sf0
                     );
 
                     continue;
                 }
 
-                let validates =
+                let mut auth_matches =
                     self.find_potential_auth_matches(&control_fields, &bib_field)?;
 
-                println!("{} {} {:?} ", rec_id, bib_field.tag, validates);
+                log::info!("Found {} potential authority matches for bib {} tag={}",
+                    auth_matches.len(), rec_id, bib_tag);
+
+                if auth_matches.len() == 0 {
+                    continue
+                }
+
+                if self.verbose {
+                    println!(
+                        "Found {} potential authority matches for bib {} tag={}",
+                        auth_matches.len(), rec_id, bib_tag
+                    );
+                }
+
+                for auth_id in auth_matches.iter() {
+                    if sf0.ends_with(&format!("){auth_id}")) {
+
+                        if self.verbose {
+                            println!("Removing $0 for bib {} tag={} auth={}",
+                                rec_id, bib_tag, auth_id);
+                        }
+
+                        // Should be one of these at the most.
+                        bib_field.remove_subfields("0");
+                    }
+                }
+
+                let mut auth_leaders: Vec<AuthLeader> = Vec::new();
+
+                if bib_tag[0..1].eq("1") || bib_tag[0..1].eq("6") || bib_tag[0..1].eq("7") {
+                    // For 1XX, 6XX, and 7XX bib fields, only link to
+                    // authority records whose leader/008 positions 14
+                    // and 15 are coded to allow use as a name/author or
+                    // subject record, depending.
+
+                    auth_leaders =
+                        self.authority_leaders_008_14_15(&bib_tag, auth_matches)?;
+
+                    auth_matches = auth_leaders.iter().map(|l| l.auth_id).collect::<Vec<i64>>();
+
+                    if self.verbose {
+                        println!("Auth matches trimmed to {auth_matches:?}");
+                    }
+                }
             }
         }
-
 
         Ok(())
     }
@@ -580,6 +629,7 @@ fn main() -> Result<(), String> {
     opts.optopt("", "staff-account", "Staff Account ID", "STAFF_ACCOUNT_ID");
     opts.optopt("", "start-id", "Start ID", "START_ID");
     opts.optopt("", "end-id", "End ID", "END_ID");
+    opts.optflag("", "verbose", "Verbose");
 
     DatabaseConnection::append_options(&mut opts);
 
