@@ -216,6 +216,8 @@ impl Editor {
     }
 
     pub fn disconnect(&mut self) -> Result<(), String> {
+        self.xact_rollback()?;
+
         if let Some(ref ses) = self.session {
             ses.disconnect()?;
         }

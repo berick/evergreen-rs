@@ -540,6 +540,8 @@ impl BibLinker {
 
             if let Err(e) = self.link_one_bib(rec_id, &mut bre, &control_fields, &mut record) {
                 log::error!("Error processing bib record {rec_id}: {e}");
+                self.editor.disconnect()?;
+                self.editor.connect()?;
             }
         }
 
