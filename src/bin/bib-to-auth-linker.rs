@@ -282,7 +282,7 @@ impl BibLinker {
     fn find_matching_auth_for_thesaurus(
         &self,
         bib_field: &marcutil::Field,
-        auth_leaders: Vec<AuthLeader>
+        auth_leaders: &Vec<AuthLeader>
     ) -> Result<Option<i64>, String> {
 
         let mut bib_ind2 = bib_field.ind2;
@@ -384,7 +384,6 @@ impl BibLinker {
     ) -> Result<(), String> {
 
         let xml = record.to_xml()?;
-        let xml = marcutil::xml::escape_xml(&xml);
         let bre_id = bre["id"].as_i64().unwrap();
 
         if bre["marc"].as_str().unwrap() == xml {
@@ -398,7 +397,9 @@ impl BibLinker {
         bre["edit_date"] = json::from("now");
         bre["editor"] = json::from(self.staff_account);
 
+        self.editor.xact_begin()?;
         self.editor.update(&bre)?;
+        self.editor.xact_commit()?;
 
         Ok(())
     }
@@ -494,12 +495,28 @@ impl BibLinker {
 
     fn link_bibs(&mut self) -> Result<(), String> {
 
+        self.editor.connect()?;
+
         let control_fields = self.get_controlled_fields()?;
 
-        for rec_id in self.get_bib_ids()? {
-            log::info!("Processing record {rec_id}");
+        let mut counter = 0;
+        let bib_ids = self.get_bib_ids()?;
+        let bib_count = bib_ids.len();
 
-            let record = match self.editor.retrieve("bre", rec_id)? {
+        for rec_id in bib_ids {
+            counter += 1;
+
+            log::info!("Processing record [{}/{}] {rec_id}", counter, bib_count);
+
+            if counter % 100 == 0 {
+                // Periodically reconnect so we don't keep a single
+                // cstore backend pinned for the duration.  Allows for
+                // drones to cycle, reclaim memory, etc.
+                self.editor.disconnect()?;
+                self.editor.connect()?;
+            }
+
+            let mut bre = match self.editor.retrieve("bre", rec_id)? {
                 Some(r) => r,
                 None => {
                     log::warn!("No such bib record: {rec_id}");
@@ -507,11 +524,12 @@ impl BibLinker {
                 }
             };
 
-            if record["deleted"].as_str().unwrap() == "t" {
+            if bre["deleted"].as_str().unwrap() == "t" {
                 continue;
             }
 
-            let xml = record["marc"].as_str().unwrap();
+            let xml = bre["marc"].as_str().unwrap();
+
             let mut record = match marcutil::Record::from_xml(xml).next() {
                 Some(r) => r,
                 None => {
@@ -520,7 +538,7 @@ impl BibLinker {
                 }
             };
 
-            if let Err(e) = self.link_one_bib(rec_id, &control_fields, &mut record) {
+            if let Err(e) = self.link_one_bib(rec_id, &mut bre, &control_fields, &mut record) {
                 log::error!("Error processing bib record {rec_id}: {e}");
             }
         }
@@ -531,11 +549,14 @@ impl BibLinker {
     fn link_one_bib(
         &mut self,
         rec_id: i64,
+        bre: &mut json::JsonValue,
         control_fields: &Vec<ControlledField>,
         record: &mut marcutil::Record
     ) -> Result<(), String> {
 
         log::info!("Processing record {rec_id}");
+
+        let mut bib_modified = false;
 
         if self.verbose { println!("Processing bib record {rec_id}"); }
 
@@ -552,20 +573,24 @@ impl BibLinker {
             for bib_field in record.get_fields_mut(&cfield.bib_tag) {
                 let bib_tag = bib_field.tag.to_string();
 
-                let sf0 = match bib_field.get_subfields("0").first() {
-                    Some(sf) => sf.content.to_string(),
-                    None => "".to_string()
-                };
-
                 let is_fast_heading = self.is_fast_heading(&bib_field);
 
-                if sf0.contains(")fst") && is_fast_heading {
-                    log::debug!(
-                        "Ignoring FAST heading on rec={} and tag={} $0={}",
-                        rec_id, bib_tag, sf0
-                    );
+                if let Some(sf0) = bib_field.get_subfields("0").first() {
+                    let sfcode = sf0.code.to_string();
 
-                    continue;
+                    if sfcode.contains(")fst") && is_fast_heading {
+                        log::debug!(
+                            "Ignoring FAST heading on rec={} and tag={} $0={}",
+                            rec_id, bib_tag, sfcode
+                        );
+
+                        continue;
+                    }
+
+                    // Remove any existing subfield 0 values -- should
+                    // only be one of these at the most.
+                    bib_field.remove_subfields("0");
+                    bib_modified = true;
                 }
 
                 let mut auth_matches =
@@ -585,22 +610,11 @@ impl BibLinker {
                     );
                 }
 
-                for auth_id in auth_matches.iter() {
-                    if sf0.ends_with(&format!("){auth_id}")) {
-
-                        if self.verbose {
-                            println!("Removing $0 for bib {} tag={} auth={}",
-                                rec_id, bib_tag, auth_id);
-                        }
-
-                        // Should be one of these at the most.
-                        bib_field.remove_subfields("0");
-                    }
-                }
-
                 let mut auth_leaders: Vec<AuthLeader> = Vec::new();
 
-                if bib_tag[0..1].eq("1") || bib_tag[0..1].eq("6") || bib_tag[0..1].eq("7") {
+                if bib_tag.starts_with("1") ||
+                   bib_tag.starts_with("6") ||
+                   bib_tag.starts_with("7") {
                     // For 1XX, 6XX, and 7XX bib fields, only link to
                     // authority records whose leader/008 positions 14
                     // and 15 are coded to allow use as a name/author or
@@ -615,10 +629,39 @@ impl BibLinker {
                         println!("Auth matches trimmed to {auth_matches:?}");
                     }
                 }
-            }
-        }
 
-        Ok(())
+                let mut auth_id = match auth_matches.get(0) {
+                    Some(id) => Some(*id),
+                    None => None
+                };
+
+                if bib_tag.eq("650") || bib_tag.eq("651") || bib_tag.eq("655") {
+                    // Using the indicator-2 value from the  controlled bib
+                    // field, find the first authority in the list of matches
+                    // that uses the same thesaurus.  If no such authority
+                    // is found, no matching occurs.
+                    auth_id = self.find_matching_auth_for_thesaurus(&bib_field, &auth_leaders)?;
+                }
+
+                // Avoid exiting here just because we have no matchable
+                // auth records, because the bib record may have changed
+                // above when subfields were removed.  We need to capture
+                // those changes.
+
+                if let Some(id) = auth_id {
+                    let content = format!("({}){}", DEFAULT_CONTROL_NUMBER_IDENTIFIER, id);
+                    bib_field.add_subfield("0", Some(&content)).unwrap(); // known OK.
+                    bib_modified = true;
+                    log::info!("Found a match on bib={} tag={} auth={}", rec_id, bib_tag, id);
+                }
+            } // Each bib field with selected bib tag
+        } // Each controlled bib tag
+
+        if bib_modified {
+            self.update_bib_record(bre, record)
+        } else {
+            Ok(())
+        }
     }
 }
 

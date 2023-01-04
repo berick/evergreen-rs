@@ -566,8 +566,8 @@ impl Parser {
         let idlclass = self.classes.get(classname).unwrap();
 
         if let Some(pkey_field) = idlclass.pkey() {
-            if let Some(pkey_value) = obj[pkey_field].as_str() {
-                return Some(pkey_value.to_string());
+            if obj.has_key(pkey_field) {
+                return Some(format!("{}", obj[pkey_field]));
             }
         }
 

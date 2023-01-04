@@ -191,12 +191,40 @@ impl Editor {
         Ok(())
     }
 
+    pub fn xact_begin(&mut self) -> Result<(), String> {
+        if let Some(id) = self.request_np(&self.app_method("transaction.begin"))? {
+            if let Some(id_str) = id.as_str() {
+                log::debug!("New transaction started with id {}", id_str);
+                self.xact_id = Some(id_str.to_string());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn xact_commit(&mut self) -> Result<(), String> {
+
+        if self.has_session() && self.has_xact_id() {
+            let xact_id = self.xact_id.as_ref().unwrap().to_string();
+            let method = self.app_method("transaction.commit");
+            self.request(&method, xact_id.as_str())?;
+        }
+
+        self.xact_id = None;
+        self.xact_wanted = false;
+
+        Ok(())
+    }
+
     pub fn disconnect(&mut self) -> Result<(), String> {
         if let Some(ref ses) = self.session {
             ses.disconnect()?;
         }
         self.session = None;
         Ok(())
+    }
+
+    pub fn connect(&mut self) -> Result<(), String> {
+        self.session().connect()
     }
 
     /// Send an API request without any parameters.
