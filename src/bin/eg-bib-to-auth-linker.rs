@@ -3,15 +3,11 @@
  * script.  It varies from stock Evergreen.  It should be possible to
  * sync with stock Evergreen with additional command line options.
  */
-use std::io;
 use std::rc::Rc;
-use std::time::Instant;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use getopts;
 use evergreen as eg;
-use opensrf as osrf;
-use eg::idl;
 use eg::init;
 use eg::norm::Normalizer;
 use eg::db::DatabaseConnection;
@@ -57,7 +53,6 @@ struct AuthLeader {
 }
 
 struct BibLinker {
-    ctx: init::Context,
     db: Rc<RefCell<DatabaseConnection>>,
     editor: eg::Editor,
     staff_account: u32,
@@ -106,7 +101,6 @@ impl BibLinker {
         let verbose = params.opt_present("verbose");
 
         Ok(BibLinker {
-            ctx,
             db,
             editor,
             staff_account,
@@ -115,10 +109,6 @@ impl BibLinker {
             verbose,
             normalizer: Normalizer::new(),
         })
-    }
-
-    fn ctx(&self) -> &init::Context {
-        &self.ctx
     }
 
     fn db(&self) -> &Rc<RefCell<DatabaseConnection>> {
@@ -411,7 +401,7 @@ impl BibLinker {
     ) -> Result<Vec<i64>, String> {
 
         let bib_tag = &bib_field.tag;
-        let mut auth_ids: Vec<i64> = Vec::new();
+        let auth_ids: Vec<i64> = Vec::new();
 
         let controlled: Vec<&ControlledField> =
             controlled_fields.iter().filter(|cf| &cf.bib_tag == bib_tag).collect();
@@ -427,8 +417,7 @@ impl BibLinker {
         let mut searches: Vec<(&str, &str)> = Vec::new();
 
         for bib_sf in &bib_field.subfields {
-            if let Some(controller) =
-                controlled.iter().filter(|cf| &cf.subfield == &bib_sf.code).next() {
+            if controlled.iter().filter(|cf| &cf.subfield == &bib_sf.code).next().is_some() {
                 searches.push((&bib_sf.code, &bib_sf.content));
             }
         }

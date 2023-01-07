@@ -35,10 +35,13 @@ atty = "0.2.14"
 name = "egsh"
 
 [[bin]]
-name = "parallel-ingest"
+name = "eg-parallel-ingest"
 
 [[bin]]
-name = "marc-export"
+name = "eg-bib-to-auth-linker"
+
+[[bin]]
+name = "eg-marc-export"
 
 [[example]]
 name = "basic-requests"

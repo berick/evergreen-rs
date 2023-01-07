@@ -33,7 +33,7 @@ impl Normalizer {
 
     fn normalize_substitutions(&self, value: &str) -> String {
 
-        let mut value = value.to_uppercase()
+        let value = value.to_uppercase()
             // Start/End of string characters
             .replace("\u{0098}", "")
             .replace("\u{009C}", "")
