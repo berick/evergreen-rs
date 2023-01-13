@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 const DEFAULT_IDL_PATH: &str = "/openils/conf/fm_IDL.xml";
 
+#[derive(Clone)]
 pub struct Context {
     client: osrf::client::Client,
     config: Arc<osrf::conf::Config>,
