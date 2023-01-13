@@ -4,6 +4,7 @@ use opensrf::client::Client;
 
 const LOGIN_TIMEOUT: i32 = 30;
 
+#[derive(Debug)]
 pub enum AuthLoginType {
     Temp,
     Opac,
@@ -93,6 +94,49 @@ impl AuthLoginArgs {
     }
 }
 
+
+#[derive(Debug)]
+pub struct AuthInternalLoginArgs {
+    pub user_id: i64,
+    pub org_unit: Option<i64>,
+    pub login_type: AuthLoginType,
+    pub workstation: Option<String>,
+}
+
+impl AuthInternalLoginArgs {
+
+    pub fn new<T>(user_id: i64, login_type: T) -> Self
+    where
+        T: Into<AuthLoginType>,
+    {
+        AuthInternalLoginArgs {
+            user_id,
+            login_type: login_type.into(),
+            org_unit: None,
+            workstation: None,
+        }
+    }
+
+    pub fn to_json_value(&self) -> json::JsonValue {
+        let lt: &str = (&self.login_type).into();
+
+        let mut jv = json::object! {
+            "login_type": lt,
+            "user_id": self.user_id,
+        };
+
+        if let Some(w) = &self.workstation {
+            jv["workstation"] = json::from(w.as_str());
+        }
+
+        if let Some(w) = self.org_unit {
+            jv["org_unit"] = json::from(w);
+        }
+
+        jv
+    }
+}
+
 pub struct AuthSession {
     token: String,
     authtime: usize,
@@ -100,6 +144,7 @@ pub struct AuthSession {
 }
 
 impl AuthSession {
+
     /// Login and acquire an authtoken.
     ///
     /// Returns None on login failure, Err on error.
@@ -115,10 +160,36 @@ impl AuthSession {
             }
         };
 
-        let evt = match event::EgEvent::parse(&json_val) {
+        AuthSession::handle_auth_response(&args.workstation, &json_val)
+    }
+
+    /// Login and acquire an authtoken.
+    ///
+    /// Returns None on login failure, Err on error.
+    pub fn create_internal_session(client: &Client,
+        args: &AuthInternalLoginArgs) -> Result<Option<AuthSession>, String> {
+
+        let params = vec![args.to_json_value()];
+        let mut ses = client.session("open-ils.auth_internal");
+        let mut req = ses.request("open-ils.auth_internal.session.create", params)?;
+
+        let json_val = match req.recv(LOGIN_TIMEOUT)? {
+            Some(v) => v,
+            None => {
+                return Err("Login Timed Out".to_string());
+            }
+        };
+
+        AuthSession::handle_auth_response(&args.workstation, &json_val)
+    }
+
+    fn handle_auth_response(workstation: &Option<String>,
+        response: &json::JsonValue) -> Result<Option<AuthSession>, String> {
+
+        let evt = match event::EgEvent::parse(&response) {
             Some(e) => e,
             None => {
-                return Err(format!("Unexpected response: {:?}", json_val));
+                return Err(format!("Unexpected response: {:?}", response));
             }
         };
 
@@ -151,12 +222,13 @@ impl AuthSession {
             workstation: None,
         };
 
-        if let Some(w) = &args.workstation {
+        if let Some(w) = workstation {
             auth_ses.workstation = Some(String::from(w));
         }
 
         Ok(Some(auth_ses))
     }
+
 
     pub fn token(&self) -> &str {
         &self.token
@@ -170,3 +242,4 @@ impl AuthSession {
         self.workstation.as_deref()
     }
 }
+

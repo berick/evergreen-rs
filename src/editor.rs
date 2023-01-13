@@ -238,9 +238,15 @@ impl Editor {
     }
 
     fn logtag(&self) -> String {
+
+        let requestor = match self.requestor() {
+            Some(req) => format!("{}", req),
+            None => "0".to_string(),
+        };
+
         format!("editor[{}|{}]",
             match self.has_xact_id() { true => "1", _ => "0" },
-            match self.requestor() {Some(r) => r["id"].as_str().unwrap(), _ => "0" }
+            requestor
         )
     }
 

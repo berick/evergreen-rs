@@ -32,5 +32,17 @@ fn main() -> Result<(), String> {
         println!("Search found permission: {}", perm["code"]);
     }
 
+    // Testing internal auth
+    let args = eg::auth::AuthInternalLoginArgs::new(1, "temp");
+
+    let auth_ses = match eg::auth::AuthSession::create_internal_session(client, &args)? {
+        Some(s) => s,
+        None => panic!("Internal Login failed"),
+    };
+
+    let token = auth_ses.token();
+
+    println!("Logged in with internal and got authtoken: {}", token);
+
     Ok(())
 }
