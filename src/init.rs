@@ -11,7 +11,7 @@ pub struct Context {
     config: Arc<osrf::conf::Config>,
     idl: Arc<idl::Parser>,
     params: getopts::Matches,
-    host_settings: Option<osrf::sclient::HostSettings>,
+    host_settings: Option<Arc<osrf::sclient::HostSettings>>,
 }
 
 impl Context {
@@ -27,7 +27,7 @@ impl Context {
     pub fn params(&self) -> &getopts::Matches {
         &self.params
     }
-    pub fn host_settings(&self) -> Option<&osrf::sclient::HostSettings> {
+    pub fn host_settings(&self) -> Option<&Arc<osrf::sclient::HostSettings>> {
         self.host_settings.as_ref()
     }
 }
@@ -77,13 +77,13 @@ pub fn init_with_more_options(
     // (e.g. a public domain).
 
     let mut idl_file = DEFAULT_IDL_PATH.to_string();
-    let mut host_settings: Option<osrf::sclient::HostSettings> = None;
+    let mut host_settings: Option<Arc<osrf::sclient::HostSettings>> = None;
 
     if let Ok(s) = osrf::sclient::SettingsClient::get_host_settings(&client, false) {
         if let Some(fname) = s.value("/IDL").as_str() {
             idl_file = fname.to_string();
         }
-        host_settings = Some(s);
+        host_settings = Some(s.into_shared());
     }
 
     // Always honor the command line option if present.
