@@ -153,6 +153,10 @@ impl Editor {
         self.requestor.as_ref()
     }
 
+    pub fn set_requestor(&mut self, r: &json::JsonValue)  {
+        self.requestor = Some(r.clone())
+    }
+
     pub fn last_event(&self) -> Option<&EgEvent> {
         self.last_event.as_ref()
     }
