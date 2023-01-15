@@ -28,7 +28,8 @@ rust_decimal = { version = "1.26.1", features = ["db-postgres"] }
 
 # for egsh
 # could be make optional
-rustyline = "10.0.0"
+# Issues with deriving Default for enums in v10.1.0
+rustyline = "=10.0.0"
 atty = "0.2.14"
 
 [[bin]]
