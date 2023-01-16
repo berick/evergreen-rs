@@ -137,6 +137,10 @@ impl Editor {
         self.authtoken.as_deref()
     }
 
+    pub fn set_authtoken(&mut self, token: &str) {
+        self.authtoken = Some(token.to_string())
+    }
+
     pub fn authtime(&self) -> Option<usize> {
         self.authtime
     }
