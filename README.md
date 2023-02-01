@@ -1,2 +1,3 @@
-# evergreen-rs
-Evergreen Rust Bindings
+# Evergreen Rust Bindings
+
+Project moved to [KCLS Evergreen Universe Rust Repository](https://github.com/kcls/evergreen-universe-rs)
